@@ -1,0 +1,6 @@
+#!/bin/bash
+
+for ii in $(seq ); do
+    gmx grompp -f ie.mdp -c ./output/step4_md-$ii.gro -t ./output/step4_md-$ii.cpt -p ./pdb2gmx/topol.top -n ./pdb2gmx/index.ndx -o ie.tpr
+    gmx mdrun -deffnm ie -rerun step4_md-$ii.xtc -nb cpu -s ../ie.tpr
+done
