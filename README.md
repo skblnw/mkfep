@@ -27,12 +27,15 @@ Execute the script as follows:
 python main.py
 ```
 
-# Contributing
-Please read CONTRIBUTING.md for details on our code of conduct, and the process for submitting pull requests to us.
+## Contributing
 
-# License
-This project is licensed under the [LICENSE_NAME] License - see the LICENSE file for details.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
 
-# Contact
-Your Name - your.email@example.com
-Project Link: https://github.com/your-username/your-repository
+## License
+
+This project is licensed under the [LICENSE_NAME] License - see the [LICENSE](LICENSE) file for details.
+
+## Contact
+
+- Your Name - your.email@example.com
+- Project Link: https://github.com/your-username/your-repository
