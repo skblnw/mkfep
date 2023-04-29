@@ -2,12 +2,6 @@
 
 Automatic FEP setup for Gromacs
 
-## Features
-
-- Feature 1
-- Feature 2
-- Feature 3
-
 ## Usage
 
 ### Preparing the environment
@@ -27,11 +21,11 @@ Execute the script as follows:
 python main.py
 ```
 
-# Alchemical Analysis Package Installation
+## Alchemical Analysis Package Installation
 
 This README provides the installation steps for the Alchemical Analysis Python package.
 
-## Installation Steps
+### Installation Steps
 
 ```
 conda create -n alchemical_analysis python=2.7
@@ -44,7 +38,7 @@ python setup.py install
 pip install pathlib2
 ```
 
-## Applying the Patch
+### Applying the Patch
 
 Apply the following patch to the `alchemical_analysis.py` file:
 
