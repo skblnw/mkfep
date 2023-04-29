@@ -33,51 +33,14 @@ This README provides the installation steps for the Alchemical Analysis Python p
 
 ## Installation Steps
 
-1. Create a new conda environment with Python 2.7:
-
 ```
 conda create -n alchemical_analysis python=2.7
-```
-
-2. Activate the newly created conda environment:
-
-```
 conda activate alchemical_analysis
-```
-
-3. Install pymbar from the conda-forge channel:
-
-```
 conda install -c conda-forge pymbar
-```
-
-4. Install matplotlib:
-
-```
 conda install matplotlib
-```
-
-5. Clone the alchemical-analysis repository:
-
-```
 git clone https://github.com/MobleyLab/alchemical-analysis.git
-```
-
-6. Change to the cloned directory:
-
-```
 cd alchemical-analysis
-```
-
-7. Install the package:
-
-```
 python setup.py install
-```
-
-8. Install pathlib2:
-
-```
 pip install pathlib2
 ```
 
@@ -85,11 +48,13 @@ pip install pathlib2
 
 Apply the following patch to the `alchemical_analysis.py` file:
 
-❯ diff alchemical_analysis.py alchemical_analysis.py.backup
+```
+> diff alchemical_analysis.py alchemical_analysis.py.backup
 334c334
 <          O = MBAR.computeOverlap()['matrix']
 ---
 >          O = MBAR.computeOverlap()[2]
+```
 
 
 You're now ready to use the Alchemical Analysis package in your Python projects!
