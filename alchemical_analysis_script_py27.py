@@ -47,8 +47,8 @@ if check_command_exists("alchemical_analysis"):
                 print(message)
                 combined_resfile.write("{} {}: ".format(pos, residue))
                 
-                free_dir = Path("{}/pos{}/{}/win28.t1/free".format(base, pos, residue))
-                complex_dir = Path("{}/pos{}/{}/win28.t1/complex".format(base, pos, residue))
+                free_dir = Path("{}/pos{}/{}/win{}.t1/free".format(base, pos, residue, directories_num))
+                complex_dir = Path("{}/pos{}/{}/win{}.t1/complex".format(base, pos, residue, directories_num))
                 
                 if not free_dir.exists():
                     combined_resfile.write("Free state not exist; \n")
