@@ -1,0 +1,71 @@
+define                   = -DPOSRES
+; Run control
+integrator               = md
+tinit                    = 0
+dt                       = 0.001
+nsteps                   = 250000
+; Output control
+nstxout                  = 0
+nstvout                  = 0
+nstfout                  = 0
+nstlog                   = 5000
+nstenergy                = 200
+nstxout-compressed       = 5000
+; Neighborsearching and short-range nonbonded interactions
+cutoff-scheme            = verlet
+nstlist                  = 40 
+pbc                      = xyz
+rlist                    = 1.2
+; van der Waals
+vdwtype                  = cutoff
+vdw-modifier             = potential-switch
+rvdw                     = 1.2
+rvdw-switch              = 1.0
+; Apply long range dispersion corrections for Energy and Pressure
+DispCorr                 = EnerPres
+; Electrostatics
+coulombtype              = PME
+rcoulomb                 = 1.2
+; EWALD/PME/PPPM parameters
+;pme_order                = 4
+;fourierspacing           = 0.12  ; Spacing for the PME/PPPM FFT grid
+;ewald_rtol               = 1e-06
+; Temperature coupling
+tcoupl                  = V-rescale
+tc_grps                 = non-Water Water
+tau_t                   = 0.1       0.1
+ref_t                   = 310       310
+; Pressure coupling is off for NVT
+Pcoupl                   = No
+; COM control
+refcoord-scaling         = com
+comm-mode                = linear
+; Do not constrain the starting configuration
+continuation             = no
+; Generate velocities to start
+gen_vel                  = yes
+gen_temp                 = 298
+gen_seed                 = -1
+; options for bonds
+constraints              = h-bonds  ; we only have C-H bonds here
+; Type of constraint algorithm
+constraint-algorithm     = lincs
+
+; Free energy control stuff
+free_energy              = yes
+init_lambda_state        = 0
+delta_lambda             = 0
+calc_lambda_neighbors    = -1           ; only immediate neighboring windows
+couple-lambda0           = vdw-q        ; only van der Waals interactions
+couple-lambda1           = vdw-q         ; turn off everything, in this case only vdW
+;couple-moltype           = LIG          ; name of moleculetype to decouple
+;couple-intramol          = no
+; Vectors of lambda specified here
+; Each combination is an index that is retrieved from init_lambda_state for each simulation
+; init_lambda_state        0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+fep-lambdas              = 0 0.000001 0.00001 0.0001 0.001 0.004 0.01 0.02 0.03 0.04 0.05 0.06 0.08 0.1 0.12 0.14 0.18 0.22 0.26 0.30 0.34 0.38 0.42 0.46 0.5 0.54 0.58 0.62 0.66 0.7 0.74 0.78 0.82 0.86 0.88 0.9 0.92 0.94 0.95 0.96 0.97 0.98 0.99 0.996 0.999 0.9999 0.99999 0.999999 1.00
+; Options for the decoupling
+sc-alpha                 = 0.5
+sc-power                 = 1
+sc-coul                  = no           ; linear interpolation of Coulomb (none in this case)
+nstdhdl                  = 200
