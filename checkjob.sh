@@ -56,3 +56,5 @@ for ii in "${target_dir}"/*/"${subdir}"/; do
   # Print table row
   printf "%-30s | %-15s | %-15s\n" "$dir_name" "$free_status" "$complex_status"
 done
+
+echo -e "\nNot Completed:" "${missing_list[@]}"

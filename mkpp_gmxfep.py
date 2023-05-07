@@ -10,6 +10,8 @@ def read_data(file_path):
         for line in file:
             if "broken" in line:
                 continue
+            if "not exist" in line:
+                continue
             tokens = line.strip().split()
             position = int(tokens[0])
             aa = tokens[1].strip(":")
