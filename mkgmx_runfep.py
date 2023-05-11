@@ -159,11 +159,38 @@ def check_command_existence(command_name):
         print(f"Error: {command_name} does not exist", file=sys.stderr)
         sys.exit(1)
 
+def one_to_three(aa_seq):
+    aa_dict = {
+        "A": "ALA",  # Alanine
+        "R": "ARG",  # Arginine
+        "N": "ASN",  # Asparagine
+        "D": "ASP",  # Aspartic acid
+        "C": "CYS",  # Cysteine
+        "E": "GLU",  # Glutamic acid
+        "Q": "GLN",  # Glutamine
+        "G": "GLY",  # Glycine
+        "H": "HIS",  # Histidine
+        "I": "ILE",  # Isoleucine
+        "L": "LEU",  # Leucine
+        "K": "LYS",  # Lysine
+        "M": "MET",  # Methionine
+        "F": "PHE",  # Phenylalanine
+        "P": "PRO",  # Proline
+        "S": "SER",  # Serine
+        "T": "THR",  # Threonine
+        "W": "TRP",  # Tryptophan
+        "Y": "TYR",  # Tyrosine
+        "V": "VAL"   # Valine
+    }
+    # Use dictionary to map each one-letter code to its corresponding three-letter code
+    # Apply mapping to each character in the input string using a list comprehension
+    # Call the upper() method on the input string to ensure that all characters are in uppercase
+    return [aa_dict[aa] for aa in aa_seq.upper()]
+
 def main(structure_file):
     rpath = os.getcwd()
-    positions = [5,7]
-    residues = ["ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "SER", "THR", "TRP", "TYR", "VAL"]
-    # residues = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "SER", "THR", "TRP", "TYR", "VAL"]
+    positions = [2,3,4,5,6,7,8]
+    residues = one_to_three("A")
     num_windows = 28
     run_directory_name = "win28.t1"
     create_directories(rpath, positions, residues, structure_file, num_windows, run_directory_name, free=True, complex=True)
