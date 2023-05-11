@@ -82,6 +82,60 @@ def create_run_files(rpath, pos, res, run_directory_name, option):
         run_file.write(run_content)
     # subprocess.run(["bash", os.path.join(rpath, f"pos{pos}/{res}/{run_directory_name}/{option}/run")])
 
+def generate_half_lambda_values(total_number, power):
+    # Generate half of the total number of equally spaced values between 0 and 1
+    half_total_number = (total_number + 1) // 2
+    linear_values = np.linspace(0, .5, half_total_number)
+
+    # Raise the linear values to the specified power
+    scaled_values = linear_values ** power
+
+    # Apply a non-linear transformation to obtain the desired distribution
+    transformed_values = np.sin((scaled_values - 0.5) * np.pi) * 0.5 + 0.5
+
+    return transformed_values
+
+def generate_symmetric_lambda_values(total_number, power):
+    half_lambda_values = generate_half_lambda_values(total_number, power)
+    mirrored_values = 1 - half_lambda_values[::-1]
+
+    # Combine the two halves, excluding the middle value if the total number is odd
+    if total_number % 2 == 0:
+        lambda_values = np.concatenate((half_lambda_values, mirrored_values))
+    else:
+        lambda_values = np.concatenate((half_lambda_values, mirrored_values[1:]))
+
+    return lambda_values
+
+def print_values_and_intervals(lambda_values):
+    print("Lambda values:")
+    for value in lambda_values:
+        print(f"{value:.4f}")
+    intervals = np.diff(lambda_values)
+    for i, interval in enumerate(intervals):
+        print(f"Interval {i + 1}: {interval:.4f}")
+
+def format_init_lambda_state_replacement(total_number):
+    indices = ' '.join(str(i) for i in range(total_number + 1))
+    return f"; init_lambda_state {indices}"
+
+def format_fep_lambdas_replacement(lambda_values):
+    formatted_values = ' '.join(f"{value:.5f}" for value in lambda_values)
+    return f"fep-lambdas = {formatted_values}"
+
+def get_replacement_strings(use_predefined_strings=False, predefined_strings=None):
+    if use_predefined_strings and predefined_strings:
+        init_lambda_state_replacement = predefined_strings.get('init_lambda_state')
+        fep_lambdas_replacement = predefined_strings.get('fep_lambdas')
+    else:
+        total_number = predefined_strings.get('total_number')
+        power = 1.1 # Adjust this value to control the intervals' distribution
+        lambda_values = generate_symmetric_lambda_values(total_number, power)
+        init_lambda_state_replacement = format_init_lambda_state_replacement(total_number)
+        fep_lambdas_replacement = format_fep_lambdas_replacement(lambda_values)
+    
+    return init_lambda_state_replacement, fep_lambdas_replacement
+
 def create_mdp_files(num_dirs, rpath, base_dir):
     """
     Create MDP files in multiple directories with updated content.
@@ -95,8 +149,13 @@ def create_mdp_files(num_dirs, rpath, base_dir):
     # Define the replacement strings
     # init_lambda_state_replacement = '; init_lambda_state        0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23'
     # fep_lambdas_replacement = 'fep-lambdas = 0 0.00001 0.0001 0.001 0.01 0.02 0.04 0.06 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.94 0.96 0.98 0.99 0.999 0.9999 0.99999 1.00'
-    init_lambda_state_replacement = '; init_lambda_state        0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27'
-    fep_lambdas_replacement = 'fep-lambdas = 0 0.00001 0.0001 0.001 0.01 0.02 0.03 0.04 0.06 0.08 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.92 0.94 0.96 0.97 0.98 0.99 0.999 0.9999 0.99999 1.00'
+    predefined_strings = {
+        'total_number': num_dirs,
+        'init_lambda_state': '; init_lambda_state        0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27',
+        'fep_lambdas': 'fep-lambdas = 0 0.00001 0.0001 0.001 0.01 0.02 0.03 0.04 0.06 0.08 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.92 0.94 0.96 0.97 0.98 0.99 0.999 0.9999 0.99999 1.00'
+    }
+
+    init_lambda_state_replacement, fep_lambdas_replacement = get_replacement_strings(use_predefined_strings=True, predefined_strings=predefined_strings)
 
     for i in range(num_dirs):
         new_dir_path = os.path.join(base_dir, f"dir{i}")
@@ -166,8 +225,8 @@ def one_to_three(aa_seq):
         "N": "ASN",  # Asparagine
         "D": "ASP",  # Aspartic acid
         "C": "CYS",  # Cysteine
-        "E": "GLU",  # Glutamic acid
         "Q": "GLN",  # Glutamine
+        "E": "GLU",  # Glutamic acid
         "G": "GLY",  # Glycine
         "H": "HIS",  # Histidine
         "I": "ILE",  # Isoleucine
