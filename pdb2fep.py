@@ -29,15 +29,6 @@ for file in required_files:
         print(f"Error: Required file '{file}' not found.")
         sys.exit(1)
 
-# Check if required directories exist
-required_directories = [
-    "charmm36-feb2021.ff"
-]
-for directory in required_directories:
-    if not os.path.isdir(directory):
-        print(f"Error: Required directory '{directory}' not found.")
-        sys.exit(1)
-
 # Convert gro to pdb if needed
 if INPUT_FILE.endswith(".gro"):
     subprocess.run(["gmx", "editconf", "-f", INPUT_FILE, "-o", f"{PREFIX}.pdb"], check=True)
@@ -95,7 +86,8 @@ def cleanup():
 Path("topol.top").unlink(missing_ok=True)
 
 # Run gmx to get conf.gro
-subprocess.run(["gmx", "pdb2gmx", "-f", "chains/chain_C.pdb", "-ff", "charmm36-feb2021", "-water", "tip3p"], check=True)
+# subprocess.run(["gmx", "pdb2gmx", "-f", "chains/chain_C.pdb", "-ff", "charmm36-feb2021", "-water", "tip3p"], check=True)
+subprocess.run(["gmx", "pdb2gmx", "-f", "chains/chain_C.pdb", "-ff", "charmm36m-mut", "-water", "tip3p"], check=True)
 
 # Mutate conf.gro using pmx
 subprocess.run(["pmx", "mutate", "-f", "conf.gro", "-ff", "charmm36m-mut", "-o", "peptide_mutate.pdb", "--script", "mut"])
@@ -143,7 +135,7 @@ with open("pmxtop.top", "r") as f, open("pmxtop_free.top", "w") as free_f:
 ions_mdp_content = '''
 integrator  = md
 dt          = 0.001
-nsteps      = 50000
+nsteps      = 100
 nstlist         = 1
 cutoff-scheme   = Verlet
 ns_type         = grid

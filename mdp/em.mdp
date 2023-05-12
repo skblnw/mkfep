@@ -43,7 +43,7 @@ constraint-algorithm     = lincs
 
 ; Free energy control stuff
 free_energy              = yes
-init_lambda_state        = 0
+init_lambda_state        = 
 delta_lambda             = 0
 calc_lambda_neighbors    = -1           ; only immediate neighboring windows
 couple-lambda0           = vdw-q        ; only van der Waals interactions
@@ -52,8 +52,8 @@ couple-lambda1           = vdw-q         ; turn off everything, in this case onl
 ;couple-intramol          = no
 ; Vectors of lambda specified here
 ; Each combination is an index that is retrieved from init_lambda_state for each simulation
-; init_lambda_state        0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
-fep-lambdas              = 0 0.00001 0.0001 0.001 0.01 0.02 0.04 0.06 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.94 0.96 0.98 0.99 0.999 0.9999 0.99999 1.00
+; init_lambda_state        
+fep-lambdas              = 
 ; Options for the decoupling
 sc-alpha                 = 0.5
 sc-power                 = 1

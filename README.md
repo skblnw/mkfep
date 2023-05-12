@@ -8,9 +8,9 @@ Automatic FEP setup for Gromacs
 
 Make sure you have the following files and directories in your working directory:
 
-- `md.gro` or `md.pdb`: Structure file of your protein
-- `mkgmx_pdb2fep.py`: Script to generate GROMACS topology files
-- `run`: Script to execute the simulation
+- `md.gro` or `md.pdb`: Structure file of your system
+- `pdb2fep.py`: Script to generate GROMACS topology files
+- `run`: Script to execute the simulation, largely depends on user's local envrionment
 - `mdp`: Directory containing MDP files for energy minimization, NVT equilibration, and MD production
 
 ### Running the script
@@ -27,9 +27,27 @@ This README provides the installation steps for the Alchemical Analysis Python p
 
 ### Installation Steps
 
+Download miniconda or anaconda (e.g. Miniconda3-py38_23.1.0-1-Linux-x86_64.sh)
+```bash
+bash Miniconda3-py38_23.1.0-1-Linux-x86_64.sh
 ```
+
+Install pmx
+```bash
+conda create -n pmx python=3.8 numpy scipy matplotlib
+conda activate pmx
+
+git clone https://github.com/deGrootLab/pmx pmx
+cd pmx
+git checkout develop
+python setup.py install
+```
+
+Install alchemical_analysis
+```bash
 conda create -n alchemical_analysis python=2.7
 conda activate alchemical_analysis
+
 conda install -c conda-forge pymbar
 conda install matplotlib
 git clone https://github.com/MobleyLab/alchemical-analysis.git
@@ -42,17 +60,13 @@ pip install pathlib2
 
 Apply the following patch to the `alchemical_analysis.py` file:
 
-```
+```bash
 > diff alchemical_analysis.py alchemical_analysis.py.backup
 334c334
 <          O = MBAR.computeOverlap()['matrix']
 ---
 >          O = MBAR.computeOverlap()[2]
 ```
-
-
-You're now ready to use the Alchemical Analysis package in your Python projects!
-
 
 ## Contributing
 
@@ -64,5 +78,5 @@ This project is licensed under the [LICENSE_NAME] License - see the [LICENSE](LI
 
 ## Contact
 
-- Your Name - your.email@example.com
-- Project Link: https://github.com/your-username/your-repository
+- Kev - kevin@skblnw.com
+- Project Link: https://github.com/skblnw/mkfep

@@ -36,16 +36,16 @@ def mutate_ref(ref, pos, target):
 def main(file_path):
     data = read_data(file_path)
 
-    ref0 = 'VMNILLQYV'
+    ref0 = 'ITDQVPFSV'
     aa_mapping = create_mapping()
 
     data = data.dropna(subset=['ddG'])
     data['target'] = data['AA'].map(aa_mapping)
-    data['mutated_seq'] = data.apply(lambda row: mutate_ref(ref0, row['Position'], row['target']), axis=1)
+    data['target'] = data.apply(lambda row: mutate_ref(ref0, row['Position'], row['target']), axis=1)
 
     # Insert 'ref0' as the first column in the output
     data.insert(0, 'original', ref0)
-    data[['original', 'mutated_seq', 'ddG', 'se']].to_csv('ddg_formatted.csv', header=['original', 'mutated_seq', 'ddg', 'ddgse'], index=False)
+    data[['original', 'target', 'ddG', 'se']].to_csv('ddg_formatted.csv', header=['original', 'target', 'ddg', 'ddgse'], index=False)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
