@@ -5,7 +5,7 @@ import shutil
 import re
 import numpy as np
 
-def create_directories(rpath, positions, residues, structure_file, num_dirs, run_directory_name, check_directory_existence=True, use_predefined_strings=True, free=True, complex=True):
+def create_directories(rpath, positions, residues, structure_file, num_dirs, run_directory_name, use_predefined_replacements=True, check_directory_existence=True, free=True, complex=True):
     # Loop over all positions and residues
     for pos in positions:
         for res in residues:
@@ -38,10 +38,10 @@ def create_directories(rpath, positions, residues, structure_file, num_dirs, run
                                 print(f"Error while removing and recreating directory {dir_path}: {e}")
                                 continue
             
-            # Check if pdb2gmx subdirectory already exists
-            if not os.path.exists(pdb2gmx_dir):
-                # If it doesn't exist, create the pdb2gmx directories and run the pdb2fep script
-                create_pdb2gmx_directories_and_pdb2fep(rpath, pos, res, structure_file)
+                # Check if pdb2gmx subdirectory already exists
+                if not os.path.exists(pdb2gmx_dir):
+                    # If it doesn't exist, create the pdb2gmx directories and run the pdb2fep script
+                    create_pdb2gmx_directories_and_pdb2fep(rpath, pos, res, structure_file)
             
             # Check if run_directory_name already exists
             if os.path.exists(run_dir):
@@ -52,9 +52,9 @@ def create_directories(rpath, positions, residues, structure_file, num_dirs, run
                 if response.lower() != 'y':
                     print(f"Skipping directory: {run_dir}")
                     continue
-            
-            # Create the windows directories
-            create_windows(rpath, pos, res, num_dirs, run_directory_name, use_predefined_strings=use_predefined_strings, free=free, complex=complex)
+            else:
+                # Create the windows directories
+                create_windows(rpath, pos, res, num_dirs, run_directory_name, use_predefined_replacements, free, complex)
 
 def create_pdb2gmx_directories_and_pdb2fep(rpath, pos, res, structure_file):
     # Create the pdb2gmx directories
@@ -162,7 +162,7 @@ def change_directory_and_pdb2fep(rpath, pos, res):
         # This is done in a finally block to ensure that the directory is changed back even if an error occurs
         os.chdir(original_dir)
 
-def create_windows(rpath, position, residue, num_dirs, run_directory_name, use_predefined_strings=True, free=True, complex=True):
+def create_windows(rpath, position, residue, num_dirs, run_directory_name, use_predefined_replacements=True, free=True, complex=True):
     
     # Nested function to create a symlink for pdb2gmx in the target directory
     def symlink_pdb2gmx(original_dir, target_dir):
@@ -199,10 +199,10 @@ def create_windows(rpath, position, residue, num_dirs, run_directory_name, use_p
         symlink_pdb2gmx(original_dir, target_dir)
         # Copy the 'mdp' directory into the target directory
         shutil.copytree(f"{rpath}/mdp", f"{rpath}/pos{position}/{residue}/{run_directory_name}/{option}", dirs_exist_ok=True)
-        create_mdp_files(num_dirs, rpath, os.path.join(rpath, f"pos{position}/{residue}/{run_directory_name}/{option}"), use_predefined_strings=use_predefined_strings)
+        create_mdp_files(num_dirs, rpath, os.path.join(rpath, f"pos{position}/{residue}/{run_directory_name}/{option}"), use_predefined_replacements)
         create_run_files(rpath, position, residue, run_directory_name, option)
 
-def create_mdp_files(num_dirs, rpath, base_dir, use_predefined_strings=True):
+def create_mdp_files(num_dirs, rpath, base_dir, use_predefined_replacements=True):
     """
     Create MDP files in multiple directories with updated content.
 
@@ -212,8 +212,8 @@ def create_mdp_files(num_dirs, rpath, base_dir, use_predefined_strings=True):
     base_dir (str): Path to the base directory where new directories will be created.
     """
 
-    def get_replacement_strings(use_predefined_strings=False, predefined_strings=None):
-        if use_predefined_strings and predefined_strings:
+    def get_replacement_strings(use_predefined_replacements=False, predefined_strings=None):
+        if use_predefined_replacements and predefined_strings:
             init_lambda_state_replacement = predefined_strings.get('init_lambda_state')
             fep_lambdas_replacement = predefined_strings.get('fep_lambdas')
         else:
@@ -235,7 +235,7 @@ def create_mdp_files(num_dirs, rpath, base_dir, use_predefined_strings=True):
         'fep_lambdas': 'fep-lambdas = 0 0.00001 0.0001 0.001 0.01 0.02 0.03 0.04 0.06 0.08 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.92 0.94 0.96 0.97 0.98 0.99 0.999 0.9999 0.99999 1.00'
     }
 
-    init_lambda_state_replacement, fep_lambdas_replacement = get_replacement_strings(use_predefined_strings=use_predefined_strings, predefined_strings=predefined_strings)
+    init_lambda_state_replacement, fep_lambdas_replacement = get_replacement_strings(use_predefined_replacements, predefined_strings=predefined_strings)
 
     for i in range(num_dirs):
         new_dir_path = os.path.join(base_dir, f"dir{i}")
@@ -365,27 +365,35 @@ def one_to_three(aa_seq):
     # Call the upper() method on the input string to ensure that all characters are in uppercase
     return [aa_dict[aa] for aa in aa_seq.upper()]
 
-def main(structure_file):
+def main():
     rpath = os.getcwd()
-    positions = [2,3,4,5,6,7,8]
-    # residues = one_to_three("A")
-    residues = one_to_three("ARNDCQEHILKMFSTWYV")
-    num_windows = 16
-    run_directory_name = "win16.t1"
+    positions = [2]
+    residues = one_to_three("A")
+    # residues = one_to_three("ARNDCQEHILKMFSTWYV")
+    num_windows = 10
+    run_directory_name = "win10.t2"
+    pdb2gmx_needed = False
     use_predefined_replacements = False
-    check_directory_existence = False
-    create_directories(rpath, positions, residues, structure_file, num_windows, run_directory_name, check_directory_existence=check_directory_existence, use_predefined_strings=use_predefined_replacements, free=True, complex=True)
-
-if __name__ == "__main__":
-
-    # Check if required command exist
-    check_command_existence("pmx")
 
     # Check if required files exist
     structure_file = structure_files_exist(["md.gro", "md.pdb"])
-    check_existence(
-        required_files=["pdb2fep.py", "run"],
-        required_directories=["mdp"]
-    )
 
-    main(structure_file)
+    if pdb2gmx_needed:
+        # Check if required command exist
+        check_command_existence("pmx")
+
+        # Check if required files exist
+        check_existence(
+            required_files=["pdb2fep.py", "run"],
+            required_directories=["mdp"]
+        )
+
+        create_directories(rpath, positions, residues, structure_file, num_windows, run_directory_name, use_predefined_replacements, check_directory_existence=pdb2gmx_needed, free=True, complex=True)
+    else:
+        print("You specified `no pdb2gmx needed`. Skipping directory creation and file existence check.")
+
+        create_directories(rpath, positions, residues, structure_file, num_windows, run_directory_name, use_predefined_replacements, check_directory_existence=pdb2gmx_needed, free=True, complex=True)
+
+if __name__ == "__main__":
+
+    main()
