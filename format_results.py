@@ -36,7 +36,7 @@ def mutate_ref(ref, pos, target):
 def main(file_path):
     data = read_data(file_path)
 
-    ref0 = 'ITDQVPFSV'
+    ref0 = 'IMDQVPFSV'
     aa_mapping = create_mapping()
 
     data = data.dropna(subset=['ddG'])
