@@ -1,0 +1,316 @@
+#!/usr/bin/env python
+
+version = '1.2.zju28'
+update  = '2023-05-13'
+
+#------------------------------------------------------------------------------
+import os, shutil, subprocess
+import numpy as np
+rlist = list('ACDEFGHIKLMNPQRSTVWY')
+
+import logging
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s\t%(message)s')
+logging.info(os.path.basename(__file__))
+logging.info('Version: %s' %version)
+logging.info('Update:  %s' %update)
+logging.info('PID:  %s' %os.getpid())
+logging.info('-'*50+'\n')
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--src', default=None, type=str, metavar='None',
+                    help='(Optional) Source path. Default is the directory of this script.')
+parser.add_argument('--seq', default=None, type=str, metavar='None',
+                    help='(Optional) Peptide sequence. Default (and recommendation) is the basename of the execution(root) directory.')
+parser.add_argument('--ipdb', default=None, type=str, metavar='None',
+                    help='(Optional) Input PDB file. Default (and recommendation) is {--seq}.pdb in the execution(root) directory. human leukocyte antigen (HLA), beta-2-microglobulin (B2M), peptide (antigen) must be placed in order in the file.')
+parser.add_argument('--mutseq', default=None, type=str, metavar='None',
+                    help='(Optional) Mutant peptide sequence. Alternative options for mutation.')
+parser.add_argument('--mutlabel', default=None, type=str, metavar='None',
+                    help='(Optional) Mutant label. Alternative options for mutation. e.g. N2A+D3E+Y4Q')
+parser.add_argument('-w', '--win', default=32, type=int, metavar='32',
+                    help='Number of windows for FEP')
+parser.add_argument('-t', '--trial', default=0, type=int, metavar='0',
+                    help='Trail ID for FEP')
+parser.add_argument('--mutff', default=None, type=str, metavar='None',
+                    help='(Optional) Force-field parent directory for pmx. Default (and recommendation) is {--src}/mutff')
+parser.add_argument('--ff', default='charmm36m-mut', type=str, metavar='charmm36m-mut',
+                    help='Force-field label.')
+parser.add_argument('--mdp', default=None, type=str, metavar='None',
+                    help='(Optional) MDP directory. Default (and recommendation) is {--src}/mdp')
+parser.add_argument('-q', '--queue', action='store_true',
+                    help='Generate QUEUE information for high-throughput run.')
+parser.add_argument('--qpath', default=None, type=str, metavar=None,
+                    help='(Optional) Queue directory. Default (and recommendation) is $HOME/Queue')
+parser.add_argument('--qclear', action='store_true',
+                    help='Clear queue directory.')
+parser.add_argument('--overwrite', action='store_true',
+                    help='overwrite the existed files')
+args = parser.parse_args()
+logging.info(args)
+
+
+# prepare
+assert shutil.which('gmx') is not None, 'gmx not found.'
+assert shutil.which('pmx') is not None, 'pmx not found.'
+
+if args.src is None: args.src = os.path.dirname(__file__)
+logging.info('src path: %s' %args.src)
+assert os.path.exists(args.src), '%s not found' %args.src
+
+if args.mutff is None: args.mutff = '%s/mutff' %(args.src)
+logging.info('force-field parent path: %s' %args.mutff)
+assert os.path.exists(args.mutff), '%s not found' %args.mutff
+os.environ["GMXLIB"] = args.mutff
+
+if args.mdp is None: args.mdp = '%s/mdp' %(args.src)
+logging.info('mdp path: %s' %args.mdp)
+assert os.path.exists(args.mdp), '%s not found' %args.mdp
+workflow = ['em','nvt','md']
+for x in workflow + ['fep']:
+  assert os.path.exists('%s/%s.mdp' %(args.mdp, x)), '%s.mdp not found' %(x)
+
+rpath = os.getcwd()
+logging.info('root path: %s' %rpath)
+
+if args.seq is None: args.seq = os.path.basename(rpath)
+logging.info('peptide sequence: %s' %args.seq)
+
+if args.ipdb is None: args.ipdb = '%s.pdb' %(args.seq)
+logging.info('input PDB file: %s' %args.ipdb)
+assert os.path.exists(args.ipdb), '%s not found' %args.ipdb
+
+def BASH(cmd):
+  subprocess.run(cmd, check=True, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# original structure
+if args.overwrite or not os.path.exists('pdb2gmx/conf.pdb'):
+  os.makedirs('pdb2gmx', exist_ok=True)
+  os.chdir('pdb2gmx')
+  logging.info('current path: %s' %(os.getcwd()))
+  BASH('gmx pdb2gmx -f ../%s -ignh -ff %s -water tip3p -o conf.pdb' %(args.ipdb, args.ff))
+  logging.info('conf file: pdb2gmx/conf.pdb')
+  os.chdir('..')
+  logging.info('current path: %s' %(os.getcwd()))
+else:
+  logging.info('conf file existed: pdb2gmx/conf.pdb')
+
+
+chain_list = ['A','B','C']
+if args.overwrite or not all([os.path.exists('conf.%s.pdb'%x)  for x in chain_list]):
+  fi = open('pdb2gmx/conf.pdb', 'r')
+  fo = [open('conf.%s.pdb'%x, 'w')  for x in chain_list]
+  chain = -1
+  last_residue = np.inf
+  for line in fi:
+    if line.startswith("ATOM") or line.startswith("HETATM"):
+      resname = line[17:20].strip()
+      if resname == "SOL" : break
+      residue = int(line[22:26].strip())
+      if residue < last_residue :
+        chain += 1
+        chainid = chr(chain+65)
+        assert chainid in chain_list, 'PDB chain ID is wrong.'
+      line = line[:21] + chainid + line[22:]
+      fo[chain].write(line)
+      last_residue = residue
+  fi.close()
+  for f in fo: f.close()
+  logging.info('conf file: conf.{chainid}.pdb')
+else:
+  logging.info('conf file existed: conf.{chainid}.pdb')
+
+
+# mutant information
+assert (args.mutseq is not None) or (args.mutlabel is not None), 'No mutation information.'
+if args.mutlabel is not None:
+  #logging.info('mutant label: %s' %args.mutlabel)
+  tmpseq = list(args.seq)
+  for s in args.mutlabel.split('+'):
+    assert len(s)==3, 'Mutant label is wrong.'
+    i = int(s[1])-1
+    assert tmpseq[i] == s[0], 'Mutant label is wrong.'
+    assert s[2] in rlist, 'Mutant label is wrong.'
+    tmpseq[i] = s[2]
+  tmpseq = ''.join(tmpseq)
+  if args.mutseq is not None:
+    assert args.mutseq == tmpseq, 'Mutant sequence and label are not consistent.'
+  else:
+    args.mutseq = tmpseq
+
+if args.mutseq is not None:
+  logging.info('mutant sequence: %s' %args.mutseq)
+  assert len(args.seq) == len(args.mutseq), 'Peptide and mutant sequence are not same length.'
+  tmplabel = ''
+  tmppmxs = ''
+  for i in range(len(args.seq)):
+    if args.seq[i] != args.mutseq[i]:
+      tmplabel = tmplabel + args.seq[i] + '%s'%(i+1) + args.mutseq[i] + '+'
+      tmppmxs = tmppmxs + '%s %s\n' %(i+1, args.mutseq[i])
+  assert len(tmplabel) > 0, 'Peptide and mutant sequence are the same.'
+  tmplabel = tmplabel[:-1]
+  args.mutlabel = tmplabel
+  logging.info('mutant label: %s' %args.mutlabel)
+
+
+# mutant structure and topology
+def NTERIO(gmxtopfn, pmxtopfn, outfn, m=4):
+  with open(gmxtopfn, 'r') as fg:
+    og=[[]]
+    n = 0
+    for l in fg.readlines():
+      if l.startswith('['):
+        n=n+1
+        og.append([])
+      if n in [2]:
+        if any([l.startswith('    %d'%(i+1),1)  for i in range(6)]) : og[n].append(l)
+      if n in [3,4]:
+        if any([l.startswith('    %d'%(i+1),p)  for p in [0,6]  for i in range(m)]) : og[n].append(l)
+      if n in [5]:
+        if any([l.startswith('    %d'%(i+1),p)  for p in [0,6,12]  for i in range(m)]) : og[n].append(l)
+      if n in [6,7]:
+        if any([l.startswith('    %d'%(i+1),p)  for p in [0,6,12,18]  for i in range(m)]) : og[n].append(l)
+      if n in [8]:
+        if any([l.startswith('    %d'%(i+1),p)  for p in [0,6,12,18,24]  for i in range(m)]) : og[n].append(l)
+  with open(pmxtopfn, 'r') as fp:
+    out = []
+    n = 0
+    for l in fp.readlines():
+      if l.startswith('['):
+        n=n+1
+      if n<2 or n>8:
+        out.append(l)
+      if n in [2]:
+        if not any([l.startswith('    %d'%(i+1),1)  for i in range(6)]) : out.append(l)
+      if n in [3,4]:
+        if not any([l.startswith('     %d'%(i+1),p)  for p in [0,7]  for i in range(m)]) : out.append(l)
+      if n in [5]:
+        if not any([l.startswith('     %d'%(i+1),p)  for p in [0,7,14]  for i in range(m)]) : out.append(l)
+      if n in [6,7]:
+        if not any([l.startswith('     %d'%(i+1),p)  for p in [0,7,14,21]  for i in range(m)]) : out.append(l)
+      if n in [8]:
+        if not any([l.startswith('     %d'%(i+1),p)  for p in [0,7,14,21,28]  for i in range(m)]) : out.append(l)
+      if l.startswith('['):
+        out = out + og[n]
+  with open(outfn,'w') as f:
+    f.writelines(out)
+
+if args.overwrite or not (os.path.exists('%s/free/pdb2gmx/ions.gro' %args.mutlabel) and os.path.exists('%s/complex/pdb2gmx/ions.gro' %args.mutlabel)):
+  os.makedirs('%s/free/pdb2gmx' %args.mutlabel, exist_ok=True)
+  os.makedirs('%s/complex/pdb2gmx' %args.mutlabel, exist_ok=True)
+  with open('%s/pmx_script' %args.mutlabel, 'w') as f: f.write(tmppmxs)
+  nter, cter = False, False
+  if '1' in tmppmxs: nter=True
+  if '%d'%len(args.mutseq) in tmppmxs: cter=True
+  logging.info('N-terminal mutation: %s' %nter)
+  logging.info('C-terminal mutation: %s' %cter)
+  
+  os.chdir('%s/%s/free/pdb2gmx' %(rpath, args.mutlabel))
+  logging.info('current path: %s' %(os.getcwd()))
+  shutil.copyfile('%s/conf.C.pdb' %rpath, 'original.pdb')
+  if nter:
+    BASH("grep 'H[23]' original.pdb > znt.pdb")
+    BASH("sed '/H1/s/H1/HN/' original.pdb -i")
+    BASH("sed 's/H2.*C   1/C   ZNT C   0/' znt.pdb -i")
+    BASH("sed 's/H3.*C   1/O   ZNT C   0/' znt.pdb -i")
+  BASH('pmx mutate -f original.pdb -ff %s -o mutant.pdb --script %s/%s/pmx_script' %(args.ff, rpath, args.mutlabel))
+  BASH("sed -i '/^[^A]/d' mutant.pdb")
+  logging.info('generating free mutant structure: mutant.pdb')
+  
+  os.chdir('%s/%s/complex/pdb2gmx' %(rpath, args.mutlabel))
+  logging.info('current path: %s' %(os.getcwd()))
+  BASH('cat %s/conf.A.pdb %s/conf.B.pdb %s/%s/free/pdb2gmx/mutant.pdb > mutant.pdb' %(rpath, rpath, rpath, args.mutlabel))
+  logging.info('generating complex mutant structure: mutant.pdb')
+  BASH('gmx pdb2gmx -f mutant.pdb -ff %s -water tip3p -o conf.pdb' %args.ff)
+  
+  if nter: 
+    BASH('cp conf.pdb conf.pdb.copy')
+    BASH('cp topol_Protein_chain_C.itp topol_Protein_chain_C.itp.copy')
+    BASH('cp posre_Protein_chain_C.itp posre_Protein_chain_C.itp.copy')
+    BASH('cat %s/conf.A.pdb %s/conf.B.pdb %s/%s/free/pdb2gmx/znt.pdb %s/%s/free/pdb2gmx/mutant.pdb > mutant.pdb' %(rpath, rpath, rpath, args.mutlabel, rpath, args.mutlabel))
+    BASH('echo 0 0 0 0 3 0 | gmx pdb2gmx -f mutant.pdb -ff %s -water tip3p -o conf.pdb -ter' %(args.ff))
+    BASH('pmx gentop -p topol.top -ff %s' %args.ff)
+    BASH('cp pmx_topol_Protein_chain_C.itp pmx_topol_Protein_chain_C.itp.copy')
+    NTERIO('topol_Protein_chain_C.itp.copy', 'pmx_topol_Protein_chain_C.itp.copy', 'pmx_topol_Protein_chain_C.itp')
+    BASH('mv topol_Protein_chain_C.itp.copy topol_Protein_chain_C.itp')
+    BASH('mv posre_Protein_chain_C.itp.copy posre_Protein_chain_C.itp')
+    BASH('mv conf.pdb.copy conf.pdb')
+
+  else:
+    BASH('pmx gentop -p topol.top -ff %s' %args.ff)
+
+  logging.info('generating complex topology: pmxtop.top')
+  BASH('cp *.itp pmxtop.top %s/%s/free/pdb2gmx' %(rpath, args.mutlabel))
+  BASH('gmx editconf -f conf.pdb -o box.gro -box 10 10 10')
+  logging.info('building box: box.gro')
+  BASH('gmx solvate -cp box.gro -p pmxtop.top -o solv.gro')
+  logging.info('adding solvent: solv.gro')
+  BASH('touch ions.mdp')
+  BASH('gmx grompp -f ions.mdp -c solv.gro -p pmxtop.top -o ions.tpr')
+  BASH('echo SOL | gmx genion -s ions.tpr -p pmxtop.top -o ions.gro -conc 0.15 -neutral')
+  logging.info('adding ions: ions.gro')
+  BASH('echo q | gmx make_ndx -f ions.gro')
+  logging.info('making index: index.ndx')
+  BASH("grep ' C   [1-9]' conf.pdb > %s/%s/free/pdb2gmx/conf.pdb" %(rpath, args.mutlabel))
+  
+  os.chdir('%s/%s/free/pdb2gmx' %(rpath, args.mutlabel))
+  logging.info('current path: %s' %(os.getcwd()))
+  BASH("sed -i '/Protein_chain_[AB]/d' pmxtop.top")
+  logging.info('generating free topology: pmxtop.top')
+  #BASH('gmx editconf -f mutant.pdb -o box.gro -box 10 10 10')
+  BASH('gmx editconf -f conf.pdb -o box.gro -box 10 10 10')
+  logging.info('building box: box.gro')
+  BASH('gmx solvate -cp box.gro -p pmxtop.top -o solv.gro')
+  logging.info('adding solvent: solv.gro')
+  BASH('touch ions.mdp')
+  BASH('gmx grompp -f ions.mdp -c solv.gro -p pmxtop.top -o ions.tpr')
+  BASH('echo SOL | gmx genion -s ions.tpr -p pmxtop.top -o ions.gro -conc 0.15 -neutral')
+  logging.info('adding ions: ions.gro')
+  BASH('echo q | gmx make_ndx -f ions.gro')
+  logging.info('making index: index.ndx')
+
+else:
+  logging.info('structure and topology are existed')
+
+
+# FEP
+if True:
+  logging.info('FEP prepareing ...')
+  os.chdir(rpath)
+  logging.info('current path: %s' %(os.getcwd()))
+  if args.queue:
+    if args.qpath is None: args.qpath = os.environ['HOME']+'/Queue'
+    if args.qclear: shutil.rmtree(args.qpath)
+    os.makedirs(args.qpath, exist_ok=True)
+    logging.info('queue path: %s' %args.qpath)
+    qid = 1000
+    qid_parent = 100
+  logging.info('FEP windows: %d' %args.win)
+  logging.info('FEP trial ID: %d' %args.trial)
+  #from scipy.stats.distributions import norm
+  #fepl = ' '.join(['%.4f'%x for x in norm.cdf(np.linspace(-4,4,args.win))])
+  fepl = ' '.join(['%.4f'%x for x in np.sin(np.linspace(-np.pi/2,np.pi/2,args.win))/2+0.5])
+  logging.info('FEP lambda: %s' %fepl)
+  for j in ['free','complex']:
+    for i in range(args.win):
+      tmp_path = '%s/%s/w%d.t%d/%02d' %(args.mutlabel, j, args.win, args.trial, i)
+      #logging.debug(tmp_path)
+      os.makedirs(tmp_path, exist_ok=True)
+      BASH('ln -f -s %s/%s/%s/pdb2gmx %s/pdb2gmx' %(rpath, args.mutlabel, j, tmp_path))
+      for x in workflow:
+        BASH('cat %s/%s.mdp %s/fep.mdp > %s/%s.mdp' %(args.mdp, x, args.mdp, tmp_path, x))
+        BASH('echo fep-lambdas = %s >> %s/%s.mdp' %(fepl, tmp_path, x))
+        BASH('echo init_lambda_state = %d >> %s/%s.mdp' %(i, tmp_path, x))
+      if args.queue:
+        while os.path.exists('%s/%d' %(args.qpath, qid)) : qid += 1
+        BASH('echo %s/%s > %s/%d' %(rpath, tmp_path, args.qpath, qid))
+        logging.info('Queue %5d %s/%s' %(qid, rpath, tmp_path))
+    if args.queue:
+      while os.path.exists('%s/%d' %(args.qpath, qid_parent)) : qid_parent += 1
+      BASH('echo %s/%s > %s/%d' %(rpath, os.path.dirname(tmp_path), args.qpath, qid_parent))
+      logging.info('Queue %5d %s/%s' %(qid_parent, rpath, os.path.dirname(tmp_path)))
+
+
+
+
