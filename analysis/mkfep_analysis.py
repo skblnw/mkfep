@@ -133,8 +133,7 @@ def uncorrelate(sta, fin, do_dhdl=False):
             if do_dhdl:
                 print(f"WARNING: Only {N_uncorr} uncorrelated samples found at lambda number {k}; proceeding with analysis using correlated samples...")
             indices = sta[k] + numpy.arange(len(dhdl_sum))
-           
-        N = len(indices)
+            N = len(indices)
         else:
             N = N_uncorr
         N_k[k] = N
