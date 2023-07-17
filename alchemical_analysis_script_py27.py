@@ -5,11 +5,11 @@ import math
 from pathlib2 import Path
 
 base = os.getcwd()
-positions = [2, 3, 4, 5, 6, 7]
-residues = ["ALA"]
-# residues = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "SER", "THR", "TRP", "TYR", "VAL"]
+positions = [2, 3, 4, 5, 6, 7, 8]
+#residues = ["ALA"]
+residues = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "SER", "THR", "TRP", "TYR", "VAL"]
 exec_mbar = True
-directories_num = 28
+directories_num = 24
 
 def check_command_exists(command):
     command_found = any(
