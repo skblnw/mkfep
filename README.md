@@ -18,6 +18,12 @@ Make sure you have the following files and directories in your working directory
 Execute the script as follows:
 
 ```bash
+# always make sure you activate your pmx environment
+conda activate pmx
+# look at your GMXLIB to make sure you have access to mutated ff
+echo $GMXLIB
+
+# execute the main script
 python mkfep_prepare.py
 ```
 
