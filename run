@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# This is script largely depends on user's local envrionment
+# Safe to use a "blank" text file and replace it afterwards
+
+
+NWINDOWS=24
+start=0
+end=$(($NWINDOWS - 1))
+
+for ii in $(seq $start $end); do
+  gmx grompp -f dir$ii/em.mdp -c pdb2gmx/ionized.pdb -r pdb2gmx/ionized.pdb -p pdb2gmx/topol.top -o dir$ii/em.tpr -maxwarn 3
+  cd dir$ii
+  gmx mdrun -v -deffnm em
+  cd ..
+done
+
+for ii in $(seq $start $end); do
+  gmx grompp -f dir$ii/nvt.mdp -c dir$ii/em.gro -r dir$ii/em.gro -p pdb2gmx/topol.top -o dir$ii/nvt.tpr -maxwarn 2
+  cd dir$ii
+  gmx mdrun -v -deffnm nvt -nb gpu
+  cd ..
+done
+
+for ii in $(seq $start $end); do
+  gmx grompp -f dir$ii/md.mdp -c dir$ii/nvt.gro -p pdb2gmx/topol.top -o dir$ii/md.tpr -maxwarn 1
+  cd dir$ii
+  gmx mdrun -v -deffnm md -nb gpu
+  cd ..
+done

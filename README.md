@@ -9,7 +9,7 @@ Automatic FEP setup for Gromacs
 Make sure you have the following files and directories in your working directory:
 
 - `md.gro` or `md.pdb`: Structure file of your system
-- `pdb2fep.py`: Script to generate GROMACS topology files
+- `pdb2fep.py`: Behind-the-scenes script to generate GROMACS topology files
 - `run`: Script to execute the simulation, largely depends on user's local envrionment
 - `mdp`: Directory containing MDP files for energy minimization, NVT equilibration, and MD production
 
@@ -18,7 +18,7 @@ Make sure you have the following files and directories in your working directory
 Execute the script as follows:
 
 ```bash
-python main.py
+python mkfep_prepare.py
 ```
 
 ## Alchemical Analysis Package Installation
