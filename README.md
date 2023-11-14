@@ -36,6 +36,7 @@ To do: we are in the process of migrating to alchemlyb (https://github.com/alche
 #### Quick installation
 
 ***Python 2 is required***
+
 We strongly suggest that you create a new conda environment for alchemical-analysis as it requires Python 2
 ```bash
 git clone https://github.com/MobleyLab/alchemical-analysis.git
