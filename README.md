@@ -18,12 +18,12 @@ Make sure you have the following files and directories in your working directory
 Execute the script as follows:
 
 ```bash
-# always make sure you activate your pmx environment
+# Always make sure you activate your pmx environment
 conda activate pmx
-# look at your GMXLIB to make sure you have access to mutated ff
+# Look at your GMXLIB to make sure you have access to mutated ff
 echo $GMXLIB
 
-# execute the main script
+# Execute the main script
 python mkfep_prepare.py
 ```
 
@@ -32,6 +32,11 @@ python mkfep_prepare.py
 We have prepared an analysis script (alchemical_analysis_script_py27.py) which utilizes alchemical-analysis developed by Mobley Lab (https://github.com/MobleyLab/alchemical-analysis). 
 
 To do: we are in the process of migrating to alchemlyb (https://github.com/alchemistry/alchemlyb). 
+
+```bash
+# After you modify the variables inside
+python alchemical_analysis_script_py27.py
+```
 
 ## Package Installation
 
