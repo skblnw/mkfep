@@ -27,6 +27,22 @@ echo $GMXLIB
 python mkfep_prepare.py
 ```
 
+### Analyzing the results
+
+We have prepared an analysis script (alchemical_analysis_script_py27.py) which utilizes alchemical-analysis developed by Mobley Lab (https://github.com/MobleyLab/alchemical-analysis). 
+
+To do: we are in the process of migrating to alchemlyb (https://github.com/alchemistry/alchemlyb). 
+
+#### Quick installation
+
+***Python 2 is required***
+We strongly suggest that you create a new conda environment for alchemical-analysis as it requires Python 2
+```bash
+git clone https://github.com/MobleyLab/alchemical-analysis.git
+cd alchemical-analysis
+sudo python setup.py install
+```
+
 ## Alchemical Analysis Package Installation
 
 This README provides the installation steps for the Alchemical Analysis Python package.
