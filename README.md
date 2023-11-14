@@ -33,29 +33,16 @@ We have prepared an analysis script (alchemical_analysis_script_py27.py) which u
 
 To do: we are in the process of migrating to alchemlyb (https://github.com/alchemistry/alchemlyb). 
 
-#### Quick installation
+## Package Installation
 
-***Python 2 is required***
-
-We strongly suggest that you create a new conda environment for alchemical-analysis as it requires Python 2
-```bash
-git clone https://github.com/MobleyLab/alchemical-analysis.git
-cd alchemical-analysis
-sudo python setup.py install
-```
-
-## Alchemical Analysis Package Installation
-
-This README provides the installation steps for the Alchemical Analysis Python package.
-
-### Installation Steps
+### Steps
 
 Download miniconda or anaconda (e.g. Miniconda3-py38_23.1.0-1-Linux-x86_64.sh)
 ```bash
 bash Miniconda3-py38_23.1.0-1-Linux-x86_64.sh
 ```
 
-Install pmx
+#### Install pmx
 ```bash
 conda create -n pmx python=3.8 numpy scipy matplotlib
 conda activate pmx
@@ -66,7 +53,12 @@ git checkout develop
 python setup.py install
 ```
 
-Install alchemical_analysis
+#### Install alchemical_analysis
+
+***Python 2 is required***
+
+We strongly suggest that you create a new conda environment for alchemical-analysis as it requires Python 2
+
 ```bash
 conda create -n alchemical_analysis python=2.7
 conda activate alchemical_analysis
