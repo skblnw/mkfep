@@ -38,7 +38,7 @@ To do: we are in the process of migrating to alchemlyb (https://github.com/alche
 python alchemical_analysis_script_py27.py
 ```
 
-## Package Installation
+## Installation
 
 ### Steps
 
