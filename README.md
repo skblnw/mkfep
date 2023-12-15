@@ -1,4 +1,6 @@
-# mkfep
+# `mkfep.py`
+
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square&maxAge=2678400)](https://choosealicense.com/licenses/gpl-3.0/)
 
 Automatic FEP setup for Gromacs
 
@@ -94,7 +96,7 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 
 ## License
 
-This project is licensed under the [LICENSE_NAME] License - see the [LICENSE](LICENSE) file for details.
+This library is provided under the [GNU General Public License v3.0](https://choosealicense.com/licenses/gpl-3.0/) - see the [LICENSE](LICENSE) file for details.
 
 ## Contact
 
