@@ -31,9 +31,9 @@ python mkfep_prepare.py
 
 ### Analyzing the results
 
-We have prepared an analysis script (alchemical_analysis_script_py27.py) which utilizes alchemical-analysis developed by Mobley Lab (https://github.com/MobleyLab/alchemical-analysis). 
+We have prepared an analysis script (alchemical_analysis_script_py27.py) which utilizes [alchemical-analysis](https://github.com/MobleyLab/alchemical-analysis) developed by Mobley Lab. 
 
-To do: we are in the process of migrating to alchemlyb (https://github.com/alchemistry/alchemlyb). 
+*To do: we are in the process of migrating to [alchemlyb](https://github.com/alchemistry/alchemlyb).*
 
 ```bash
 # After you modify the variables inside
@@ -101,13 +101,14 @@ This library is provided under the [GNU General Public License v3.0](https://cho
 The very original workflow was written by [Kevin C. Chan](https://orcid.org/0000-0002-3705-1835). 
 Later versions were developed by [Qinglu Zhong](), 
 [Jiachen Feng](),  
-[Xufan Gao](https://github.com/gxf1212).
+[Xufan Gao](https://github.com/gxf1212), 
+and [Guanqiao Zhang]().
 
 The workflow consists of and contains a lot of inspirations from [alchemistry.org](http://alchemistry.org/wiki) and [alchemical-analysis](https://github.com/MobleyLab/alchemical-analysis). 
 
 *This project is in no way not affiliated, sponsored, or otherwise endorsed
 by the [original `mkfep` authors](https://github.com/skblnw). It was developed
-at the [Institue of Quantitative Biology](http://iqb.zju.edu.cn/en/) lead by [Ruhong Zhou](https://scholar.google.com/citations?user=LucIMhQAAAAJ&hl=en&oi=ao) in
+at [Institue of Quantitative Biology](http://iqb.zju.edu.cn/en/) lead by [Ruhong Zhou](https://scholar.google.com/citations?user=LucIMhQAAAAJ&hl=en&oi=ao) @
 [Zhejiang University](https://www.zju.edu.cn/english/).*
 
 ## Contact
