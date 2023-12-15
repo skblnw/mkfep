@@ -99,10 +99,7 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 This library is provided under the [GNU General Public License v3.0](https://choosealicense.com/licenses/gpl-3.0/) - see the [LICENSE](LICENSE) file for details.
 
 The very original workflow was written by [Kevin C. Chan](https://orcid.org/0000-0002-3705-1835). 
-Later versions were developed by [Qinglu Zhong](), 
-[Jiachen Feng](),  
-[Xufan Gao](https://github.com/gxf1212), 
-and [Guanqiao Zhang]().
+Later versions were developed by [Qinglu Zhong](), [Jiachen Feng](),  [Xufan Gao](https://github.com/gxf1212), and [Guanqiao Zhang]().
 
 The workflow consists of and contains a lot of inspirations from [alchemistry.org](http://alchemistry.org/wiki) and [alchemical-analysis](https://github.com/MobleyLab/alchemical-analysis). 
 
