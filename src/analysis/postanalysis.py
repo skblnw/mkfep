@@ -1,9 +1,10 @@
 """
 A simple tool to automatically get results from NAMD simulation output.
-
 """
 
 
+from email.policy import default
+from sys import stderr
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import numpy as np
@@ -135,19 +136,11 @@ def extract_vdw_elec_dataframes(filename, T):
     return u_nk_elec.sort_index(level=u_nk_elec.index.names[1:]), u_nk_vdw.sort_index(level=u_nk_vdw.index.names[1:])
 
 
-path = '/data/work/make_hybrid_top/tests/Lei2Guanqiao'
-fwd = os.path.join(path, 'D3N')
-bwd = os.path.join(path, 'N3D')
-T = 310
-method = BAR
-max_rep = 6
-result = {}
-stderr = {}
+def legacy_update_results(result, stderr, prefix, fpath, bpath):
+    """
+    Sub-process for get_results
+    """
 
-for prefix in ['bound', 'free']:
-    fpath = [f'{fwd}/{prefix}/t{repeat}/alchemy.fepout' for repeat in range(1, max_rep+1)]
-    bpath = [f'{bwd}/{prefix}/t{repeat}/alchemy.fepout' for repeat in range(1, max_rep+1)]
-    # total dG
     u_nk_fwd, u_nk_rev = namd_preprocess_fepout(alchemlyb.concat([namd.extract_u_nk(fp, T) for fp in fpath]),
                                                 alchemlyb.concat([namd.extract_u_nk(bp, T) for bp in bpath]))
     u_nk = namd_fit_fwbk(u_nk_fwd, u_nk_rev, method=None)
@@ -163,7 +156,7 @@ for prefix in ['bound', 'free']:
     print(f'Done {prefix} decomp data')
     # elec
     u_nk_fwd_elec, u_nk_rev_elec = namd_preprocess_fepout(alchemlyb.concat([d[0] for d in df_fwd]),
-                                                          alchemlyb.concat([d[0] for d in df_rev]))
+                                                        alchemlyb.concat([d[0] for d in df_rev]))
     u_nk_elec = namd_fit_fwbk(u_nk_fwd_elec, u_nk_rev_elec, method=None)
     bar_ele = method().fit(u_nk_elec)
     delta_f = to_kcalmol(bar_ele.delta_f_)
@@ -183,7 +176,146 @@ for prefix in ['bound', 'free']:
     print(f'Done {prefix} vdw')
     # result[prefix]['residual'] = result[prefix]['dG'] - result[prefix]['elec'] - result[prefix]['vdw']
 
-print()
-print("Forward ddG is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['dG']-result['free']['dG'], np.linalg.norm([stderr['bound']['dG'], stderr['free']['dG']])))
-print("ddG(elec)   is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['elec']-result['free']['elec'], np.linalg.norm([stderr['bound']['elec'], stderr['free']['elec']])))
-print("ddG(vdw)    is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['vdw']-result['free']['vdw'], np.linalg.norm([stderr['bound']['vdw'], stderr['free']['vdw']])))
+    return result, stderr
+
+
+def update_results(result, stderr, prefix, fpath, bpath, method, T):
+    """
+    Sub-process for get_results.
+
+    Parameters:
+    result (dict): Dictionary to store results.
+    stderr (dict): Dictionary to store standard errors.
+    prefix (str): Prefix to label the results.
+    fpath (list): List of file paths for forward calculations.
+    bpath (list): List of file paths for backward calculations.
+    method (callable): Method for free energy calculation.
+    T (float): Temperature for the calculation.
+    """
+
+    def process_dict(fpath, bpath, component_label):
+        u_nk_fwd, u_nk_rev = namd_preprocess_fepout(
+            alchemlyb.concat([namd.extract_u_nk(fp, T) for fp in fpath]),
+            alchemlyb.concat([namd.extract_u_nk(bp, T) for bp in bpath])
+        )
+        u_nk = namd_fit_fwbk(u_nk_fwd, u_nk_rev, method=None)
+        bar = method().fit(u_nk)
+        delta_f = to_kcalmol(bar.delta_f_)
+        ddeltaf = to_kcalmol(bar.d_delta_f_)
+
+        result[prefix][component_label] = delta_f[1.0][0.0]
+        stderr[prefix][component_label] = calculate_sub_diagonal_sqrt_sum(ddeltaf)
+
+    # Total
+    process_dict(fpath, bpath, 'dG')
+    print(f'Done {prefix} dG')
+
+    # Electrostatics and van der Waals components
+    for component, idx in [('elec', 0), ('vdw', 1)]:
+        df_fwd = [extract_vdw_elec_dataframes(fp, T) for fp in fpath]
+        df_rev = [extract_vdw_elec_dataframes(bp, T) for bp in bpath]
+        process_dict(
+            [d[idx] for d in df_fwd],
+            [d[idx] for d in df_rev],
+            component
+        )
+        print(f'Done {prefix} {component}')
+
+    return result, stderr
+
+
+def get_results(filelist, method, T):
+    """
+    Get the results from the fepout files, handling multiple file paths for each key.
+
+    Parameters:
+    filelist (dict): Dictionary containing nested dictionaries for 'bound' and 'free' states, 
+                     each with lists of file paths for 'fwd' and 'bwd'.
+
+    Returns:
+    tuple: Two dictionaries containing results and standard errors for bound and free states.
+    """
+
+    result = {}
+    stderr = {}
+
+    # Iterate over states ('bound' and 'free')
+    for state in filelist:
+        if 'fwd' in filelist[state] and 'bwd' in filelist[state]:
+            fpath = filelist[state]['fwd']  # list of file paths for forward calculations
+            bpath = filelist[state]['bwd']  # list of file paths for backward calculations
+            update_results(result, stderr, state, fpath, bpath, method, T)
+
+    return result, stderr
+
+
+def read_file_list(filepath):
+    """
+    Reads and formats a combined CSV file for both bound and free states.
+    Processes only lines with 'fwd' or 'bwd' keys and 'bound' or 'free' states.
+    Skips lines that do not fit these criteria or start with '#'.
+
+    Parameters:
+    filepath (str): Path to the combined CSV file.
+
+    Returns:
+    dict: A dictionary containing 'bound' and 'free' states, 
+          each with 'fwd' and 'bwd' keys mapped to lists of file paths.
+    """
+
+    filelist = {'bound': {'fwd': [], 'bwd': []}, 'free': {'fwd': [], 'bwd': []}}
+    expected_states = {'bound', 'free'}
+    expected_keys = {'fwd', 'bwd'}
+
+    with open(filepath, 'r') as file:
+        for line in file:
+            # Skip comments and empty lines
+            if line.startswith('#') or not line.strip():
+                continue
+
+            state, key, *paths = [part.strip() for part in parts]
+
+            if state in expected_states and key in expected_keys:
+                filelist[state][key].extend(paths)
+            else:
+                # Optionally, you can print a warning or log skipped lines
+                print(f"Skipping line: {line.strip()}")
+
+    return filelist
+
+
+def output_results():
+    """
+    Print the results
+    """
+
+    print()
+    print("Forward ddG is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['dG']-result['free']['dG'], np.linalg.norm([stderr['bound']['dG'], stderr['free']['dG']])))
+    print("ddG(elec)   is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['elec']-result['free']['elec'], np.linalg.norm([stderr['bound']['elec'], stderr['free']['elec']])))
+    print("ddG(vdw)    is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['vdw']-result['free']['vdw'], np.linalg.norm([stderr['bound']['vdw'], stderr['free']['vdw']])))
+
+
+def main():
+
+    # path = '/data/work/make_hybrid_top/tests/Lei2Guanqiao'
+    # fwd = os.path.join(path, 'D3N')
+    # bwd = os.path.join(path, 'N3D')
+    # T = 310
+    # method = BAR
+    # max_rep = 6
+    # result = {}
+    # stderr = {}
+
+    parser = argparse.ArgumentParser(description='Perform BAR analysis for NAMD fepout files.')
+    parser.add_argument('--fepout', type=str, help='A text file contains paths to the bound state fepout files.')
+    parser.add_argument('--method', type=str, default='BAR', help='The BAR method to use.')
+    parser.add_argument('--temperature', type=float, default=310, help='The temperature (in Kelvin) of the simulation.')
+    args = parser.parse_args()
+
+    filelist = read_file_list(args.fepout)
+    result, stderr = get_results(filelist, args.method, args.temperature)
+    output_results(result, stderr)
+
+
+if __name__ == "__main__":
+    main()
