@@ -1,27 +1,33 @@
 """
-A simple tool to automatically get results from NAMD simulation output. Author: Xufan Gao, Kevin C. Chan
+A simple tool to automatically get results from NAMD simulation output. Author: Xufan Gao; Acknowledgement: Kevin C. Chan
 
-Test: at `Lei2Guanqiao`
+Test: at `Lei2Guanqiao`: python /home/gxf1212/data/work/make_hybrid_top/FEbuilder/src/FEbuilder/analysis/fepout_analysis.py -f D3N-N3D.csv -r D3N-N3D -c time-conv -dt 1.0
 
 """
 __version__ = 0.0
+expected_states = ['bound', 'free']
+expected_keys = ['forward', 'backward']
+expected_components = ['elec', 'vdw']
 
 import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-import os, glob, argparse, logging
+warnings.simplefilter(action='ignore', category=Warning)
+import os, shutil, sys, argparse, logging
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties as FP
 import alchemlyb
 from alchemlyb.parsing import namd
 from alchemlyb.estimators import MBAR, BAR, TI
 methods = {'BAR': BAR, 'MBAR': MBAR, 'TI': TI}
-from alchemlyb.postprocessors.units import to_kcalmol, R_kJmol, kJ2kcal
-k_b = R_kJmol * kJ2kcal
-from alchemlyb.visualisation import plot_convergence
-from alchemlyb.convergence import forward_backward_convergence
+from alchemlyb.postprocessors.units import to_kcalmol, R_kJmol, kJ2kcal, get_unit_converter
+k_b = R_kJmol*kJ2kcal
+# from alchemlyb.visualisation import plot_convergence
+# from alchemlyb.convergence import forward_backward_convergence
 
 
-# user IO
+## user IO
 class CustomMetavarFormatter(argparse.RawTextHelpFormatter):
     """
     Reference: https://devpress.csdn.net/python/62fe2a1dc67703293080479b.html
@@ -47,8 +53,8 @@ class CustomMetavarFormatter(argparse.RawTextHelpFormatter):
             return ', '.join(parts)
 
 
-def define_parser(version):
-    usage = "python fepout-analysis.py [-h] -f xxx.csv [options]"
+def parse_arguments(version):
+    usage = "python fepout_analysis.py [-h] -f xxx.csv [options]"
     des = "Automated BAR analysis for NAMD fepout files, considering both forward and backward runs.\n\n"
     des += "An example input csv file should look like (empty lines and lines starting with # are commented out):\n"
     des += "forward,bound,1.csv\nforward,bound,2.csv\n...\nbackward,free,3.csv\nbackward,free,4.csv\n"
@@ -56,24 +62,44 @@ def define_parser(version):
 
     parser = argparse.ArgumentParser(prog='fepout-analysis', description=des, usage=usage, epilog=epilog,
                                      formatter_class=CustomMetavarFormatter)
+    parser.add_argument('-V', '--version', action='version', version='%(prog)s version '+str(version))
+
     basic = parser.add_argument_group('Basic')
     basic.add_argument('-f', '--fepout', type=str, metavar='FILE', required=True,
                        help='A csv file containing paths to the fepout files. Required.')
     basic.add_argument('-T', '--temperature', type=float, metavar='TEMP', default=310,
-                        help='The temperature (in Kelvin) of the simulation. Default is 310.')
+                       help='The temperature (in Kelvin) of the simulation. Default is 310.')
     basic.add_argument('-m', '--method', metavar='ESTIMATOR', choices=methods.keys(), default='BAR',
-                        help='Estimator to calculate free energy differences. Default is BAR.')
-    basic.add_argument('-l', '--logfile', type=str, metavar='LOG', default='fepout-analysis.log',
-                       help='Path to the log file. Default is fepout-analysis.log.')
-    # advanced = parser.add_argument_group('Advanced')
-    # not sure yet, basically options for plotting
-    return parser
+                       help='Estimator to calculate free energy differences. Default is BAR.')
+    result = parser.add_argument_group('Result')
+    result.add_argument('-r', '--result', type=str, metavar='DIR', default='fepout-result',
+                        help='Result directory. Default is "fepout-result".')
+    result.add_argument('-l', '--logfile', type=str, metavar='LOG', default='fepout-analysis.log',
+                        help='Path to the log file. Default is fepout-analysis.log.')
+    result.add_argument('-fo', '--fodgfile', type=str, metavar='dG', default='dg-fepout',
+                        help='Pefix of the dG-from-fepout summary. Default is dg-fepout.')
+    result.add_argument('-nd', '--no-decompose', default=False, action="store_true",
+                         help="Do not do decomposition. Default is False.")
+    result.add_argument('-d', '--dglfile', type=str, metavar='dG-L', default='dg-lambda',
+                        help='Prefix of the dG-lambda results. Default is dg-lambda.')
+    result.add_argument('-c', '--convfile', type=str, metavar='COV', default='',
+                        help='Prefix of the time-convergence results, e.g. "conv".\nDefault is an empty string, i.e. analysis won\'t be done.')
+    result.add_argument('-cn', '--conv-num', type=int, metavar='NUM', default=10,
+                        help='Number of points in time-convergence analysis. Default is 10')
+    result.add_argument('-dt', type=float, default=2.0, metavar='\u0394t',
+                        help='NAMD parameter "timestep". Equilsteps or Numofsteps * deltaT = simulation time.\n'+
+                             'Default is 2.0, unit is femtosecond (fs). For time-convergence analysis.')
+    result.add_argument('-bs', '--bsfile', type=str, metavar='BS', default='',
+                        help='Pefix of the bootstraping results. Default is an empty string, i.e. analysis won\'t be done.')
+    result.add_argument('-bsn', '--bs-num', type=int, metavar='NUM', default=50,
+                        help='Number of bootstraping. Default is 50')
+    result.add_argument('-bsfr', '--bs-fraction', type=float, metavar='PERCENT', default=0.8,
+                        help='Percentage of data extracted in each bootstraping. Default is 0.8')
 
-
-def parse_input(parser):
     args = parser.parse_args()
-    args.method = methods[args.method]
-    args.logger = define_logger(args.logfile)
+    if len(sys.argv) == 1:  # if cmd input is empty, print help and exit as FEbuilder -h does.
+        parser.print_help(sys.stderr)
+        sys.exit(1)
     return args
 
 
@@ -84,10 +110,6 @@ def define_logger(logfile):
     logger.setLevel(logging.INFO)
     # Create a handler for writing log messages to a file
     logfile = os.path.join(os.path.abspath('.'), logfile)
-    try:
-        os.remove(logfile)  # must remove the old before creation of logger in this run
-    except FileNotFoundError as e:
-        pass
     file_handler = logging.FileHandler(logfile)
     file_handler.setLevel(logging.INFO)
     # Create a handler for writing log messages to the console
@@ -99,16 +121,36 @@ def define_logger(logfile):
     return logger
 
 
-# Preprocessing, and tools
-def namd_preprocess_fepout(u_nk_fwd, u_nk_rev, edit_lambda=True):
+def get_final_dg_fepout(fepout):
+    """
+    Get final dG from the last line of fepout file.
+    :param fepout: filename
+    :return: dG value
+    """
+    if type(fepout) == str:
+        return float(open(fepout, 'r').readlines()[-1].strip().split(' ')[18])
+    elif type(fepout) == list:
+        return np.array([get_final_dg_fepout(f) for f in fepout])
+    else:
+        exit('Invalid fepout type!')
+
+
+## Preprocessing, and tools
+def namd_combine_fwbk(u_nk_fwd_lst, u_nk_rev_lst, edit_lambda=True, method=None):
     """
     Sort by lambda value and timesteps; unify column names, especially transform backward lambdas to 1 - lambda
     Avoid numerical precision errors for very small numbers. Nobody will set lambda to 1e-8....
 
-    Args: both forward and backward DataFrames
+    Combine values in forward and backward DataFrames. For column lambda_i, collect values for lambda_i-1 and lambda_i+1 (except 0 and 1).
 
-    Returns: revised DataFrames
+    :param u_nk_fwd_lst: list of forward  DataFrames
+    :param u_nk_rev_lst: list of backward DataFrames
+    :param edit_lambda: edit lambda values for backward data
+    :param method: BAR, MBAR or TI
+    :return: the combined DataFrame or the result.
     """
+    u_nk_fwd = alchemlyb.concat(u_nk_fwd_lst)
+    u_nk_rev = alchemlyb.concat(u_nk_rev_lst)
     u_nk_fwd = u_nk_fwd.sort_index(level=u_nk_fwd.index.names[1:])
     u_nk_fwd.columns = [round(c, 8) for c in u_nk_fwd.columns]
     # reverse lambda values
@@ -116,15 +158,6 @@ def namd_preprocess_fepout(u_nk_fwd, u_nk_rev, edit_lambda=True):
         u_nk_rev.columns = [round(1-c, 8) for c in u_nk_rev.columns]  # Update column names
         u_nk_rev.index = u_nk_rev.index.set_levels([round(1-c, 9) for c in u_nk_rev.index.levels[1]], level=1)  # Update fep-lambda indices
         u_nk_rev = u_nk_rev.sort_index(level=u_nk_fwd.index.names[1:]).sort_index(axis=1)  # sort
-    return u_nk_fwd, u_nk_rev
-
-
-def namd_fit_fwbk(u_nk_fwd, u_nk_rev, method=None):
-    """
-    Combine values in forward and backward DataFrames. For column lambda_i, collect values for lambda_i-1 and lambda_i+1 (except 0 and 1).
-
-    Return the combined DataFrame or the result.
-    """
     # combine the two
     u_nk_fwd.replace(0, np.nan, inplace=True)
     u_nk_fwd[u_nk_fwd.isnull()] = u_nk_rev
@@ -133,234 +166,483 @@ def namd_fit_fwbk(u_nk_fwd, u_nk_rev, method=None):
     # sort final dataframe by `fep-lambda` (as opposed to `timestep`)
     if method is None:  # just combine forward/backward
         return u_nk
-    else:  # fit
-        bar = method().fit(u_nk)
-        delta_f = to_kcalmol(bar.delta_f_)
+    else:  # fit. est: estimator
+        est = method().fit(u_nk)
+        delta_f = to_kcalmol(est.delta_f_)
         return delta_f
 
 
-def calculate_sub_diagonal_sqrt_sum(df):
+def process_sub_diagonal(df):
     """
-    Return the stderr of each window, and the square root of the sum of squares of these elements.
+    :return: the stderr of each window, and the square root of sum of square of these elements.
     """
     # Ensure the DataFrame is square
     if df.shape[0] != df.shape[1]:
         raise ValueError("DataFrame must be square")
     # Calculate the sum of squares of the sub-diagonal elements
     sub_diagonal_elements = np.array([df.iloc[i+1, i] for i in range(df.shape[0]-1)])
-    root_sum_squares = np.linalg.norm(sub_diagonal_elements)
-    return sub_diagonal_elements, root_sum_squares
+    sde = np.insert(sub_diagonal_elements, 0, 0)  # insert 0 for 1st lambda
+    norms = np.array([np.linalg.norm(sde[:i]) for i in range(df.shape[0])])
+    return sde, norms
 
 
 def extract_vdw_elec_dataframes(filename, T):
     """
     Extracts vdW and Elec values from a given FEP output file and returns two DataFrames.
 
-    Args:
-    filename (str): The path to the FEP output file.
-
-    Returns:
-    tuple of DataFrame: Two pandas DataFrames containing vdW and Elec values. Null values filled with 0.
+    :param filename: path to the FEP output file.
+    :param T: temperature in Kelvin.
+    :return: tuple of DataFrame: Two pandas DataFrames containing vdW and Elec values. Null values filled with 0.
     """
     dict_u_nk_vdw = {}
     dict_u_nk_elec = {}
     lambda_values = set()
-    time_lambda_pairs = set()
+    time_steps = set()
     parsing = False
-    beta = 1 / (k_b * T)
+    beta = 1/(k_b*T)
 
     with open(filename, 'r') as file:
         for line in file:
             if "#Free energy change for lambda window" in line:
                 parsing = False
+                continue
+            if "STEPS OF EQUILIBRATION AT LAMBDA" in line:
+                parsing = True
+                continue
             if parsing and line.startswith("FepEnergy:"):
                 # collect data
                 parts = line.split()
                 time = float(parts[1])
                 elec_l, elec_ldl = float(parts[2]), float(parts[3])
                 vdw_l, vdw_ldl = float(parts[4]), float(parts[5])
-                elec_diff = round(elec_ldl - elec_l, 8)
-                vdw_diff = round(vdw_ldl - vdw_l, 8)
+                elec_diff = round(elec_ldl-elec_l, 8)
+                vdw_diff = round(vdw_ldl-vdw_l, 8)
                 # collect indices
                 dict_u_nk_elec[(time, lambda1)] = dict_u_nk_elec.get((time, lambda1), {})
                 dict_u_nk_vdw[(time, lambda1)] = dict_u_nk_vdw.get((time, lambda1), {})
                 dict_u_nk_elec[(time, lambda1)][lambda2] = elec_diff
                 dict_u_nk_vdw[(time, lambda1)][lambda2] = vdw_diff
-                time_lambda_pairs.add((time, lambda1))
-                lambda_values.add(lambda1)
-                lambda_values.add(lambda2)
+                time_steps.add(time)  # TODO: no more count after window 1?
             if line.startswith("#NEW FEP WINDOW:"):
                 # set the current lambda values
                 parts = line.split()
                 lambda1, lambda2 = round(float(parts[-3]), 8), round(float(parts[-1]), 8)
-            if "STEPS OF EQUILIBRATION AT LAMBDA" in line:
-                parsing = True
+                lambda_values.add(lambda1)
+        lambda_values.add(lambda2)  # the last lambda
 
-    # Add the last lambda value to dictionary, and fill null with 0
-    for time in set(time for time, _ in time_lambda_pairs):
-        time_lambda_pairs.add((time, lambda2))
+    # Add all timesteps of the last lambda value to dictionary, and fill with 0
+    # not sorted, in namd_combine_fwbk
+    for time in time_steps:
         dict_u_nk_elec.setdefault((time, lambda2), {}).update({l: 0 for l in lambda_values})
         dict_u_nk_vdw.setdefault((time, lambda2), {}).update({l: 0 for l in lambda_values})
 
-    # Create DataFrame structure
-    sorted_lambdas = sorted(list(lambda_values))
-    index = pd.MultiIndex.from_tuples(time_lambda_pairs, names=['time', 'fep-lambda'])
-    u_nk_elec = pd.DataFrame(index=index, columns=sorted_lambdas).fillna(0)
-    u_nk_vdw = pd.DataFrame(index=index, columns=sorted_lambdas).fillna(0)
+    # Create DataFrame structure: sort by column (put 0 to the first), fill NAN and convert to energy
+    u_nk_elec = pd.DataFrame(dict_u_nk_elec).transpose().sort_index(axis=1).fillna(0)*beta
+    u_nk_vdw  = pd.DataFrame(dict_u_nk_vdw).transpose().sort_index(axis=1).fillna(0)*beta
+    u_nk_elec.index.names = u_nk_vdw.index.names = ['time', 'fep-lambda']
     u_nk_elec.attrs = u_nk_vdw.attrs = {'temperature': T, 'energy_unit': 'kT'}  # otherwise cannot be processed by pymbar
-
-    # Populate DataFrames
-    for (time, lambda1), values in dict_u_nk_elec.items():
-        for lambda2, elec_value in values.items():
-            u_nk_elec.at[(time, lambda1), lambda2] = float(elec_value) * beta
-    for (time, lambda1), values in dict_u_nk_vdw.items():
-        for lambda2, vdw_value in values.items():
-            u_nk_vdw.at[(time, lambda1), lambda2] = float(vdw_value) * beta
-
-    return u_nk_elec.sort_index(level=u_nk_elec.index.names[1:]), u_nk_vdw.sort_index(level=u_nk_vdw.index.names[1:])
+    return u_nk_elec, u_nk_vdw
 
 
-# fitting for free energy change
-def update_results(result, stderr, prefix, fpath, bpath, method, T):
+def plot_common(xlabel, ylabel, ax=None):
+    if ax is None:  # pragma: no cover
+        fig, ax = plt.subplots(figsize=(8, 6))
+    for dire in ["top", "right", "bottom", "left"]:
+        plt.setp(ax.spines[dire], color="#D2B9D3", lw=3, zorder=-2)
+    # for dire in ["top", "right"]:
+    #     ax.spines[dire].set_color("none")
+    ax.xaxis.set_ticks_position("bottom")
+    ax.yaxis.set_ticks_position("left")
+    ax.tick_params(axis="both", color="#D2B9D3", labelsize=14, labelcolor='black')
+    ax.set_xlabel(xlabel=xlabel, fontsize=16)  # , color="#151B54"
+    ax.set_ylabel(ylabel=ylabel, fontsize=16)
+    return ax
+
+
+def plot_dg_fepout(dg_fepout_df):
+    ax = plot_common(xlabel="State", ylabel="\u0394G (kcal/mol)")
+    sns.set_theme(style="ticks", palette="pastel")
+    sns.boxplot(data=dg_fepout_df, x="State", y="dg", hue="Direction", palette=["m", "g"], showfliers=False)
+    sns.stripplot(data=dg_fepout_df, x="State", y="dg", hue="Direction", dodge=True, color="black", size=6, jitter=True, legend=False)
+    # ax.legend(prop=FP(family='Arial', size=14))  # loses title 'Direction'
+    # sns.despine(offset=10, trim=True)
+    # plt.show()
+
+
+def plot_result(dataframe, mode, units=None, final_error=None, ax=None):
+    """Plot the forward and backward convergence.
+
+     The columns are: term1, term1_error, term2, term2_error
+
+     Returns
+     -------
+     matplotlib.axes.Axes
+         An axes with the forward and backward convergence drawn.
+
+     Ref
+     ----
+     The code is taken and modified from
+     `alchemlyb <https://github.com/alchemistry/alchemlyb>`_.
+
     """
-    Sub-process for get_results.
+    if mode == 'dg-lambda':
+        xlabel = r"FEP $\lambda$"
+        xticks = np.linspace(0, 1, 11)
+    elif mode == 'time-conv':
+        xlabel = r"Simulation time per window (ns)"
+        xticks = dataframe.index.values
+    else:
+        raise ValueError("Wrong mode!")
 
-    Parameters:
-    result (dict): Dictionary to store results.
-    stderr (dict): Dictionary to store standard errors.
-    prefix (str): Prefix to label the results.
-    fpath (list): List of file paths for forward calculations.
-    bpath (list): List of file paths for backward calculations.
-    method (callable): Method for free energy calculation.
-    T (float): Temperature for the calculation.
-    """
+    if units is None:
+        units = dataframe.attrs['energy_unit']
+    ylabel = r"$\Delta G$ ({})".format(units)
+    dataframe = get_unit_converter(units)(dataframe)
+    term1 = dataframe.iloc[:, 0].to_numpy()
+    term1_error = dataframe.iloc[:, 1].to_numpy()
+    term2 = dataframe.iloc[:, 2].to_numpy()
+    term2_error = dataframe.iloc[:, 3].to_numpy()
 
-    def process_dict(f_df, b_df, component_label):
-        u_nk_fwd, u_nk_rev = namd_preprocess_fepout(
-            alchemlyb.concat(f_df),
-            alchemlyb.concat(b_df)
-        )
-        u_nk = namd_fit_fwbk(u_nk_fwd, u_nk_rev, method=None)
-        bar = method().fit(u_nk)
-        delta_f = to_kcalmol(bar.delta_f_)
-        ddeltaf = to_kcalmol(bar.d_delta_f_)
-
-        result[prefix][component_label] = delta_f[1.0][0.0]
-        stderr[prefix][component_label] = calculate_sub_diagonal_sqrt_sum(ddeltaf)[1]
-
-    # Total
-    f_df = [namd.extract_u_nk(fp, T) for fp in fpath]
-    b_df = [namd.extract_u_nk(bp, T) for bp in bpath]
-    process_dict(f_df, b_df, 'dG')
-    args.logger.info(f'Done {prefix} dG')
-
-    # Electrostatics and van der Waals components
-    df_fwd = [extract_vdw_elec_dataframes(fp, T) for fp in fpath]
-    df_rev = [extract_vdw_elec_dataframes(bp, T) for bp in bpath]
-    for component, idx in [('elec', 0), ('vdw', 1)]:
-        process_dict(
-            [d[idx] for d in df_fwd],
-            [d[idx] for d in df_rev],
-            component
-        )
-    args.logger.info(f'Done {prefix} decomposition')
-
-    return result, stderr
-
-
-def get_results(filelist):
-    """
-    Get the results from the fepout files, handling multiple file paths for each key.
-
-    Parameters:
-    filelist (dict): Dictionary containing nested dictionaries for 'bound' and 'free' states, 
-                     each with lists of file paths for 'forward' and 'backward'.
-
-    Returns:
-    tuple: Two dictionaries containing results and standard errors for bound and free states.
-    """
-
-    result = {}
-    stderr = {}
-    # Iterate over states ('bound' and 'free')
-    for state in filelist:
-        result[state] = {}
-        stderr[state] = {}
-        if 'forward' in filelist[state] and 'backward' in filelist[state]:
-            fpath = filelist[state]['forward']  # list of file paths for forward calculations
-            bpath = filelist[state]['backward']  # list of file paths for backward calculations
-            update_results(result, stderr, state, fpath, bpath, args.method, args.temperature)
-    return result, stderr
+    ax = plot_common(xlabel, ylabel, ax)
+    color1 = "#736AFF"
+    color2 = "#C11B17"
+    # if final_error is None:
+    #     final_error = term2_error[-1]
+    #
+    # if np.isfinite(term2[-1]) and np.isfinite(final_error):
+    #     line0 = ax.fill_between(
+    #         [0, 1],
+    #         term2[-1]-final_error,
+    #         term2[-1]+final_error,
+    #         color="#D2B9D3",
+    #         zorder=1,
+    #     )
+    line1 = ax.errorbar(
+        dataframe.index.values, term1, yerr=term1_error,
+        color=color1,
+        lw=3,
+        zorder=2,
+        marker="o",
+        mfc="w",
+        mew=2.5,
+        mec=color1,
+        ms=12,
+    )
+    line2 = ax.errorbar(
+        dataframe.index.values, term2, yerr=term2_error,
+        color=color2,
+        lw=3,
+        zorder=3,
+        marker="o",
+        mfc="w",
+        mew=2.5,
+        mec=color2,
+        ms=12,
+    )
+    plt.xticks(xticks, [f"{i:.2f}" for i in xticks], fontsize=14)
+    plt.yticks(fontsize=14)
+    ax.legend(
+        (line1[0], line2[0]),
+        (dataframe.columns[0], dataframe.columns[2]),
+        loc=9,
+        prop=FP(size=16),
+        frameon=False,
+    )
+    return ax
 
 
-def read_file_list():
-    """
-    Reads and formats a combined CSV file for both bound and free states.
-    Processes only lines with 'forward' or 'backward' keys and 'bound' or 'free' states.
-    Skips lines that do not fit these criteria or start with '#'.
+class FepoutAnalysis(object):
+    def __init__(self, args):
+        """
+        args (Namespace): Arguments parsed from command line
+        filelist (dict): Dictionary containing nested dictionaries for 'bound' and 'free' states,
+                             each with lists of file paths for 'forward' and 'backward'.
+        Preprocessing: retrieving necessary arguments. Initializes the result folder and data dictionary.
+        """
+        self.args = args
+        self.args.method = methods[args.method]
+        if os.path.exists(self.args.result):
+            shutil.rmtree(self.args.result)
+        os.mkdir(self.args.result)
+        self.logger = define_logger(os.path.join(self.args.result, self.args.logfile))
+        self.filelist, self.num_replicas = self.read_file_list()
+        self.lambda_list, self.time_per_window = self.overview_fepout()
+        self.result = {
+            "deltaf": {},
+            "stderr": {},
+            "profile": {},
+            "ddeltaf": {},
+            "time-conv": {},
+            "bs-deltaf": {}
+        }
+        for key in self.result.keys():
+            self.result[key]['bound'] = {}
+            self.result[key]['free'] = {}
 
-    Parameters:
-    filepath (str): Path to the combined CSV file.
+    def run(self):
+        self.check_dg()
+        self.get_results()
+        self.output_results()
 
-    Returns:
-    dict: A dictionary containing 'bound' and 'free' states, 
-          each with 'forward' and 'backward' keys mapped to lists of file paths.
-    """
+    def read_file_list(self):
+        """
+        Reads and formats the file with paths to the fepout files for both bound and free states.
+        Processes only lines with 'forward' or 'backward' keys and 'bound' or 'free' states.
+        Skips lines that do not fit these criteria or start with '#'.
 
-    filelist = {'bound': {'forward': [], 'backward': []}, 'free': {'forward': [], 'backward': []}}
-    expected_states = {'bound', 'free'}
-    expected_keys = {'forward', 'backward'}
+        :return: A dictionary containing 'bound' and 'free' states,
+              each with 'forward' and 'backward' keys mapped to lists of file paths.
+        """
+        filelist = {state: {key: [] for key in expected_keys} for state in expected_states}
+        with open(self.args.fepout, 'r') as file:
+            for line in file:
+                # Skip comments and empty lines
+                if line.startswith('#') or not line.strip():
+                    continue
+                state, key, path = line.strip().split(',')
+                if state in expected_states and key in expected_keys:
+                    filelist[state][key].append(path)
+                else:
+                    # Optionally, you can print a warning or log skipped lines
+                    self.logger.info(f"Skipping line: {line.strip()}")
+        # print a summary chart of number of files. Adjust as needed for longer names
+        state_width = 7
+        forward_width = 15
+        backward_width = 15
+        self.logger.info("Number of replicas should be the same:")
+        self.logger.info(f"| {'State'.ljust(state_width)} | {'Forward Files'.ljust(forward_width)} | {'Backward Files'.ljust(backward_width)} |")
+        self.logger.info(f"| {'-'*state_width} | {'-'*forward_width} | {'-'*backward_width} |")
+        for state in expected_states:
+            forward_count = len(filelist[state]['forward'])
+            backward_count = len(filelist[state]['backward'])
+            self.logger.info(f"| {state.capitalize().ljust(state_width)} | {str(forward_count).ljust(forward_width)} | {str(backward_count).ljust(backward_width)} |")
+        self.logger.info('')
+        return filelist, len(filelist[state]['forward'])
 
-    with open(args.fepout, 'r') as file:
-        for line in file:
-            # Skip comments and empty lines
-            if line.startswith('#') or not line.strip():
-                continue
-            state, key, path = line.strip().split(',')
-            if state in expected_states and key in expected_keys:
-                filelist[state][key].append(path)
-            else:
-                # Optionally, you can print a warning or log skipped lines
-                args.logger.info(f"Skipping line: {line.strip()}")
+    def overview_fepout(self):
+        """
+        Take one file and retrieve the lambdas.
+        :return: the list of lambdas.
+        """
+        data = namd.extract_u_nk(self.filelist['bound']['forward'][0], self.args.temperature)
+        lambda_list = data.columns.tolist()
+        time_idx = data.index.get_level_values(0)
+        time_per_window = (max(time_idx) - min(time_idx))/1000000*self.args.dt  # unit: nanosecond
+        return lambda_list, time_per_window
 
-    return filelist
+    def check_dg(self):
+        paths = []
+        for state, directions in self.filelist.items():
+            for direction, files in directions.items():
+                for file in files:
+                    paths.append({'State': state, 'Direction': direction, 'dg': get_final_dg_fepout(file)})
+        dg_fepout_df = pd.DataFrame(paths)
+        dg_fepout_df['dg'] = dg_fepout_df.apply(lambda row: row['dg']*(-1) if row['Direction'] == 'backward' else row['dg'], axis=1)
+        plot_dg_fepout(dg_fepout_df)
+        plt.savefig(os.path.join(self.args.result, self.args.fodgfile+'.png'))
+        dg_fepout_df.to_csv(os.path.join(self.args.result, self.args.fodgfile+'.csv'))
+
+    # fitting for free energy change
+    def get_results(self):
+        """
+        Get the results from the fepout files, handling multiple file paths for each key/state.
+
+        :return: No, just update the result dictionary.
+        """
+        # Iterate over states ('bound' and 'free')
+        for state in self.filelist.keys():
+            fpaths = self.filelist[state]['forward']
+            bpaths = self.filelist[state]['backward']
+            self.update_results(state, fpaths, bpaths)
+
+    def update_results(self, state, fpaths, bpaths):
+        """
+        Update the results for each state.
+
+        Parameters:
+        :param state (str): bound or free.
+        :param fpath (list): List of file paths for forward calculations.
+        :param bpath (list): List of file paths for backward calculations.
+        """
+        # Total
+        f_df = [namd.extract_u_nk(fp, self.args.temperature) for fp in fpaths]
+        b_df = [namd.extract_u_nk(bp, self.args.temperature) for bp in bpaths]
+        u_nk = namd_combine_fwbk(f_df, b_df, method=None)
+        if self.args.convfile == '':
+            est = self.fit_bidirection(u_nk)
+            self.update_dict(est, state, 'dG')
+        else:
+            self.logger.info(f'Doing time convergence analysis for {state}...')
+            est_list = self.fit_bidirection(u_nk, time_conv=True)
+            self.update_dict(est_list[-1], state, 'dG')
+            self.update_time_convergence(est_list, state)
+        self.logger.info(f'Done {state} dG')
+
+        # Electrostatics and van der Waals components
+        if not self.args.no_decompose:
+            df_fwd = [extract_vdw_elec_dataframes(fp, self.args.temperature) for fp in fpaths]
+            df_rev = [extract_vdw_elec_dataframes(bp, self.args.temperature) for bp in bpaths]
+            for component, idx in [('elec', 0), ('vdw', 1)]:
+                u_nk_component = namd_combine_fwbk([d[idx] for d in df_fwd], [d[idx] for d in df_rev], method=None)
+                est = self.fit_bidirection(u_nk_component)
+                self.update_dict(est, state, component)
+            self.logger.info(f'Done {state} decomposition')
+
+        # boostraping
+        if self.args.bsfile != '':
+            self.result["bs-deltaf"][state] = self.fit_bootstrap(u_nk)
+            self.logger.info(f'Done {state} bootstrapping')
+
+    def fit_bidirection(self, u_nk, time_conv=False):
+        """
+        Do the fitting.
+
+        :param u_nk: combined forward/backward data returned by `namd_combine_fwbk`
+        :param component: dG, elec or vdw.
+        :return: an estimator object, or a list of them for time convergence analysis
+        """
+        if not time_conv:
+            est = self.args.method().fit(u_nk)
+            return est
+        else:
+            est_list = []
+            num_sampling_per_window = len(u_nk[0]) / len(self.lambda_list) / self.num_replicas
+            for i in range(1, self.args.conv_num+1):
+                subsampling = num_sampling_per_window/self.args.conv_num*i
+                u_nk_cut_list = [u_nk.iloc[int(j * num_sampling_per_window * self.num_replicas):
+                                           int(j * num_sampling_per_window * self.num_replicas + subsampling * self.num_replicas)]
+                                 for j in range(len(self.lambda_list))]
+                u_nk_cut = alchemlyb.concat(u_nk_cut_list)
+                est_list.append(self.args.method().fit(u_nk_cut))
+                # self.logger.info(f'Done {i/self.args.conv_num*100:.1f}%')
+            return est_list
+
+    def fit_bootstrap(self, u_nk):
+        results = []
+        for i in range(self.args.bs_num):
+            # subsample a fraction of the data randomly, in each value of fep-lambda
+            # remove the index added, and sort by time
+            u_nk_subsample = (u_nk.groupby('fep-lambda').apply(
+                lambda group: group.sample(frac=self.args.bs_fraction)).
+                reset_index(level=0, drop=True).sort_index(level=u_nk.index.names[1:]))
+            est = self.args.method().fit(u_nk_subsample)
+            dg = to_kcalmol(est.delta_f_)[1.0][0.0]
+            results.append(dg)
+        return np.array(results, dtype=float)
+
+    def update_dict(self, est, state, component):
+        """
+        Actually update the results.
+
+        :param est: returned by `fit_bidirection`.
+        :param state:
+        :param component:
+        """
+        delta_f = to_kcalmol(est.delta_f_)
+        ddeltaf = to_kcalmol(est.d_delta_f_)
+        sde, norms = process_sub_diagonal(ddeltaf)
+        self.result["deltaf"][state][component] = delta_f[1.0][0.0]
+        self.result["stderr"][state][component] = norms[-1]
+        self.result["profile"][state][component] = delta_f[0.0].values
+        self.result["ddeltaf"][state][component] = norms
+
+    def update_time_convergence(self, est_list, state):
+        deltaf_list = []
+        stderr_list = []
+        for est in est_list:
+            deltaf_list.append(to_kcalmol(est.delta_f_)[1.0][0.0])
+            ddeltaf = to_kcalmol(est.d_delta_f_)
+            sde, norms = process_sub_diagonal(ddeltaf)
+            stderr_list.append(norms[-1])
+        # make the data a DataFrame
+        self.result['time-conv'][state] = pd.DataFrame({
+            "deltaf": deltaf_list,
+            "stderr": stderr_list
+        }, index=np.linspace(1/self.args.conv_num, 1, self.args.conv_num)*self.num_replicas*self.time_per_window)
+
+    # output
+    def output_results(self):
+        """
+        Print the results
+        """
+        # summary of energy
+        self.logger.info('\nResult:')
+        self.logger.info("Forward \u0394\u0394G is {:8.3f} ± {:.3f} kcal/mol".format(
+            self.result["deltaf"]['bound']['dG']-self.result["deltaf"]['free']['dG'],
+            np.linalg.norm([self.result["stderr"]['bound']['dG'], self.result["stderr"]['free']['dG']])))
+        if self.args.no_decompose:
+            self.logger.info(f'Disabled decomposition')
+        else:
+            for component in expected_components:
+                self.logger.info("\u0394G_{:5s}    is {:8.3f} ± {:.3f} kcal/mol".format(component,
+                            self.result["deltaf"]['bound'][component]-self.result["deltaf"]['free'][component],
+                            np.linalg.norm([self.result["stderr"]['bound'][component], self.result["stderr"]['free'][component]])))
 
 
-def output_results(result, stderr):
-    """
-    Print the results
-    """
-    args.logger.info('\nResult:')
-    args.logger.info("Forward ddG is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['dG']-result['free']['dG'], np.linalg.norm([stderr['bound']['dG'], stderr['free']['dG']])))
-    args.logger.info("ddG(elec)   is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['elec']-result['free']['elec'], np.linalg.norm([stderr['bound']['elec'], stderr['free']['elec']])))
-    args.logger.info("ddG(vdw)    is {:6.3f} ± {:.3f} kcal/mol".format(result['bound']['vdw']-result['free']['vdw'], np.linalg.norm([stderr['bound']['vdw'], stderr['free']['vdw']])))
+        # dG-lambda plot
+        dg_lambda_df = pd.DataFrame({
+            "Bound": self.result["profile"]['bound']['dG'],
+            "Bound_error": self.result["ddeltaf"]['bound']['dG'],
+            "Free": self.result["profile"]['free']['dG'],
+            "Free_error": self.result["ddeltaf"]['free']['dG']
+        }, index=self.lambda_list)
+        dg_lambda_df.attrs = {'temperature': self.args.temperature, 'energy_unit': 'kcal/mol'}
+        ax = plot_result(dg_lambda_df, mode='dg-lambda')
+        ax.figure.savefig(os.path.join(self.args.result, self.args.dglfile+'.png'))
+        dg_lambda_df.to_csv(os.path.join(self.args.result, self.args.dglfile+'.csv'))
+
+        # time convergence (bound/free)
+        if not self.args.convfile == '':
+            time_conv_df = pd.concat([self.result['time-conv']['bound'], self.result['time-conv']['free']], axis=1)
+            time_conv_df.columns = ['Bound', 'Bound_error', 'Free', 'Free_error']
+            time_conv_df.attrs = {'temperature': self.args.temperature, 'energy_unit': 'kcal/mol'}
+            ax = plot_result(time_conv_df, mode='time-conv')
+            ax.figure.savefig(os.path.join(self.args.result, self.args.convfile+'.png'))
+            time_conv_df.to_csv(os.path.join(self.args.result, self.args.convfile+'.csv'))
+
+        # bootstraping (bound/free)
+        if self.args.bsfile != '':
+            self.logger.info("Bootstrapping results:")
+            string = ''
+            for state in expected_states:
+                self.logger.info("\u0394G_{:5s}    is {:8.3f} ± {:.3f} kcal/mol".format(state,
+                            self.result["deltaf"][state]['dG'], np.std(self.result["bs-deltaf"][state])))
+                str_list = list(map(str, self.result["bs-deltaf"][state]))
+                string += "\u0394G_{:5s},{:s}\n".format(state, ','.join(str_list))
+            _ = open(os.path.join(self.args.result, self.args.bsfile+'.csv'), 'w').write(string)
 
 
-# wrap-up
 def main():
-    filelist = read_file_list()
-    result, stderr = get_results(filelist)
-    output_results(result, stderr)
+    args = parse_arguments(__version__)
+    fa = FepoutAnalysis(args)
+    fa.run()
 
 
-global args  # more accessible to arguments
 if __name__ == "__main__":
-    parser = define_parser(__version__)
-    args = parse_input(parser)
     main()
 
 
-# debug
+# %% debug
 # if __name__ == "__main__":
 #     path = '/data/work/make_hybrid_top/tests/Lei2Guanqiao'
 #     os.chdir(path)
 #     data = {
 #         'fepout': os.path.join(path, 'D3N-N3D.csv'),
-#         'method': BAR,
-#         'temperature': 310
-#         'logfile': 'fepout-analysis.log',
+#         'method': 'BAR',
+#         'temperature': 310,
+#         'result': 'D3N-N3D',
+#         'logfile': 'analysis.log',
+#         "fodgfile": 'dg_fepout',
+#         "no_decompose": True,  # False
+#         "dglfile": 'dg-lambda',
+#         "convfile": '',  # time-conv
+#         "conv_num": 10,
+#         "dt": 1.0,
+#         "bsfile": "bootstrap",
+#         "bs_num": 50,
+#         "bs_fraction": 0.8
 #     }
 #     args = argparse.Namespace(**data)
-#     args.logger = define_logger()
-#     main()
+#     fa = FepoutAnalysis(args)
+#     fa.run()
 
